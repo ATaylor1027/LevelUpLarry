@@ -1,0 +1,39 @@
+-- ServerScriptService > PlaytimeManager
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local DataStoreService = game:GetService("DataStoreService")
+
+local PlaytimeDataStore = DataStoreService:GetDataStore("PlaytimeData")
+local GetPlaytime = ReplicatedStorage:WaitForChild("Actions"):WaitForChild("GetPlaytime")
+
+local playerPlaytime = {}
+
+Players.PlayerAdded:Connect(function(player)
+	local success, totalPlaytime = pcall(function()
+		return PlaytimeDataStore:GetAsync(player.UserId) or 0
+	end)
+	if success then
+		playerPlaytime[player.UserId] = totalPlaytime
+	else
+		playerPlaytime[player.UserId] = 0
+		warn("[Level Up Larry] Failed to load playtime for " .. player.Name)
+	end
+	GetPlaytime:FireClient(player, playerPlaytime[player.UserId])
+end)
+
+Players.PlayerRemoving:Connect(function(player)
+	local success, err = pcall(function()
+		PlaytimeDataStore:SetAsync(player.UserId, playerPlaytime[player.UserId] or 0)
+	end)
+	if not success then
+		warn("[Level Up Larry] Failed to save playtime for " .. player.Name .. ": " .. err)
+	end
+end)
+
+while true do
+	wait(60) -- Update every minute
+	for _, player in pairs(Players:GetPlayers()) do
+		playerPlaytime[player.UserId] = (playerPlaytime[player.UserId] or 0) + 60
+		GetPlaytime:FireClient(player, playerPlaytime[player.UserId])
+	end
+end

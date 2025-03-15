@@ -1,0 +1,25 @@
+-- ServerScriptService > SetupInventoryEvents
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
+
+local Actions = ReplicatedStorage:FindFirstChild("Actions") or Instance.new("Folder")
+Actions.Name = "Actions"
+Actions.Parent = ReplicatedStorage
+
+local AddItemEvent = Actions:FindFirstChild("AddItem") or Instance.new("RemoteEvent")
+AddItemEvent.Name = "AddItem"
+AddItemEvent.Parent = Actions
+
+local ToggleInventoryEvent = Actions:FindFirstChild("ToggleInventory") or Instance.new("RemoteEvent")
+ToggleInventoryEvent.Name = "ToggleInventory"
+ToggleInventoryEvent.Parent = Actions
+
+local GetPlaytime = Actions:FindFirstChild("GetPlaytime") or Instance.new("RemoteEvent")
+GetPlaytime.Name = "GetPlaytime"
+GetPlaytime.Parent = Actions
+
+print("[Server] Inventory events created")
+
+Players.PlayerAdded:Connect(function(player)
+	AddItemEvent:FireClient(player, "Oak Logs", 1) -- Test item on join
+end)

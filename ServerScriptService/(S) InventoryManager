@@ -1,0 +1,38 @@
+-- ServerScriptService > InventoryManager
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
+local DataManager = require(script.Parent:WaitForChild("DataManager"))
+local AddItemEvent = ReplicatedStorage.Actions:WaitForChild("AddItem", 5)
+
+local function addItem(player, itemName, amount)
+	local data = DataManager.GetData(player)
+	if not data then
+		warn("[Level Up Larry] Failed to get data for " .. player.Name .. " in InventoryManager")
+		return
+	end
+	local inventory = data.Inventory or {}
+	inventory[itemName] = (inventory[itemName] or 0) + amount
+	data.Inventory = inventory
+	DataManager.SetData(player, data)
+	print("[Level Up Larry] Server: Added to " .. player.Name .. "'s inventory: " .. itemName .. " x" .. amount)
+end
+
+AddItemEvent.OnServerEvent:Connect(function(player, itemName, amount)
+	if type(itemName) ~= "string" or type(amount) ~= "number" or amount <= 0 then
+		warn("[Level Up Larry] Invalid item addition attempt by " .. player.Name)
+		return
+	end
+	addItem(player, itemName, amount)
+end)
+
+Players.PlayerAdded:Connect(function(player)
+	local data = DataManager.GetData(player)
+	if not data then
+		warn("[Level Up Larry] Failed to get data for " .. player.Name .. " in InventoryManager PlayerAdded")
+		return
+	end
+	if not data.Inventory then
+		data.Inventory = {}
+		DataManager.SetData(player, data)
+	end
+end)

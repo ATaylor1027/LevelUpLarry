@@ -1,0 +1,53 @@
+-- ServerScriptService > BankManager
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
+local Actions = ReplicatedStorage:WaitForChild("Actions")
+local BankItemsEvent = Actions:FindFirstChild("BankItems") or Instance.new("RemoteEvent")
+local DepositItemEvent = Actions:FindFirstChild("DepositItem") or Instance.new("RemoteEvent")
+
+if not Actions:FindFirstChild("BankItems") then
+	BankItemsEvent.Name = "BankItems"
+	BankItemsEvent.Parent = Actions
+	print("[Level Up Larry] Created BankItems RemoteEvent in BankManager")
+end
+if not Actions:FindFirstChild("DepositItem") then
+	DepositItemEvent.Name = "DepositItem"
+	DepositItemEvent.Parent = Actions
+	print("[Level Up Larry] Created DepositItem RemoteEvent in BankManager")
+end
+
+local playerBanks = {}
+
+DepositItemEvent.OnServerEvent:Connect(function(player, itemName, amount)
+	print("[Level Up Larry] Received deposit request from " .. player.Name .. ": " .. itemName .. " x" .. amount)
+	local bank = playerBanks[player.UserId] or {}
+	local found = false
+	for i, bankItem in pairs(bank) do
+		if bankItem.Name == itemName then
+			bankItem.Amount = (bankItem.Amount or 0) + amount
+			found = true
+			break
+		end
+	end
+	if not found then
+		table.insert(bank, { Name = itemName, Amount = amount })
+	end
+	playerBanks[player.UserId] = bank
+	print("[Level Up Larry] Deposited " .. itemName .. " x" .. amount .. " for " .. player.Name .. ". Bank now: " .. #bank .. " items")
+	BankItemsEvent:FireClient(player, bank)
+end)
+
+Players.PlayerAdded:Connect(function(player)
+	player.Chatted:Connect(function(message)
+		if message == "/bank" then
+			local bank = playerBanks[player.UserId] or {}
+			print("[Level Up Larry] Sent bank items to " .. player.Name .. ": " .. (#bank > 0 and tostring(#bank) .. " items" or "Empty"))
+			BankItemsEvent:FireClient(player, bank)
+		end
+	end)
+end)
+
+Players.PlayerRemoving:Connect(function(player)
+	-- Persist bank data if needed
+	print("[Level Up Larry] Player " .. player.Name .. " leaving, bank saved: " .. tostring(playerBanks[player.UserId]))
+end)

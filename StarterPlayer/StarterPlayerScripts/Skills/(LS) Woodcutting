@@ -1,0 +1,197 @@
+-- StarterPlayer > StarterPlayerScripts > Woodcutting
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local UserInputService = game:GetService("UserInputService")
+local Player = Players.LocalPlayer
+local PlayerGui = Player:WaitForChild("PlayerGui")
+local FellEvent = ReplicatedStorage:WaitForChild("Actions"):WaitForChild("Fell", 5)
+local StopChoppingEvent = ReplicatedStorage:WaitForChild("Actions"):FindFirstChild("StopChopping") or Instance.new("RemoteEvent")
+if not ReplicatedStorage.Actions:FindFirstChild("StopChopping") then
+	StopChoppingEvent.Name = "StopChopping"
+	StopChoppingEvent.Parent = ReplicatedStorage.Actions
+	print("[Level Up Larry] Created StopChopping RemoteEvent")
+end
+
+print("[Level Up Larry] Woodcutting starting")
+
+-- Popup GUI setup
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "WoodcuttingProgress"
+screenGui.ResetOnSpawn = false
+screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+screenGui.Parent = PlayerGui
+
+local progressFrame = Instance.new("Frame")
+progressFrame.Name = "ProgressFrame"
+progressFrame.Size = UDim2.new(0, 200, 0, 100)
+progressFrame.Position = UDim2.new(0.5, -100, 0.2, 0)
+progressFrame.BackgroundColor3 = Color3.fromRGB(62, 53, 41)
+progressFrame.BorderSizePixel = 0
+progressFrame.Visible = false
+progressFrame.Parent = screenGui
+
+local logsLabel = Instance.new("TextLabel")
+logsLabel.Name = "LogsLabel"
+logsLabel.Size = UDim2.new(1, 0, 0, 40)
+logsLabel.Position = UDim2.new(0, 0, 0, 10)
+logsLabel.BackgroundTransparency = 1
+logsLabel.Text = "Logs: 0"
+logsLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+logsLabel.TextSize = 16
+logsLabel.ZIndex = 2
+logsLabel.Parent = progressFrame
+
+local timeLabel = Instance.new("TextLabel")
+timeLabel.Name = "TimeLabel"
+timeLabel.Size = UDim2.new(1, 0, 0, 40)
+timeLabel.Position = UDim2.new(0, 0, 0, 50)
+timeLabel.BackgroundTransparency = 1
+timeLabel.Text = "Time: 0s"
+timeLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+timeLabel.TextSize = 16
+timeLabel.ZIndex = 2
+timeLabel.Parent = progressFrame
+
+local currentTree = nil
+local logsReceived = 0
+local startTime = nil
+local isChopping = false
+
+local function updateProgressDisplay()
+	if isChopping and currentTree and startTime then
+		logsLabel.Text = "Logs: " .. logsReceived
+		local elapsed = math.floor(tick() - startTime)
+		timeLabel.Text = "Time: " .. elapsed .. "s"
+	end
+end
+
+local function stopChopping()
+	if isChopping then
+		isChopping = false
+		progressFrame.Visible = false
+		if currentTree then
+			StopChoppingEvent:FireServer(currentTree)
+			print("[Level Up Larry] Stopped chopping " .. currentTree.Name)
+		end
+		currentTree = nil
+	end
+end
+
+local function setupWoodcuttingPrompts()
+	task.wait(2)
+	local treesFound = false
+	for _, tree in pairs(game.Workspace:GetChildren()) do
+		if tree.Name == "Oak Tree" or tree.Name == "Willow Tree" or tree.Name == "Yew Tree" then
+			treesFound = true
+			print("[Level Up Larry] Checking " .. tree.Name .. " for Trunk...")
+
+			local trunk
+			if tree:IsA("Model") then
+				local attempts = 0
+				local maxAttempts = 10
+				repeat
+					trunk = tree:FindFirstChild("Trunk")
+					if not trunk then
+						attempts = attempts + 1
+						print("[Level Up Larry] Attempt " .. attempts .. ": Waiting for Trunk in " .. tree.Name)
+						task.wait(0.5)
+					end
+				until trunk or attempts >= maxAttempts
+
+				if not trunk then
+					warn("[Level Up Larry] No Trunk found in " .. tree.Name .. " after " .. maxAttempts .. " attempts")
+					print("[Level Up Larry] Listing all children of " .. tree.Name .. ":")
+					for _, child in pairs(tree:GetChildren()) do
+						print("[Level Up Larry] - " .. child.Name .. " (" .. child.ClassName .. ")")
+					end
+					trunk = tree:FindFirstChildWhichIsA("MeshPart", true)
+					if not trunk then
+						warn("[Level Up Larry] No MeshPart found in " .. tree.Name .. ", using tree as fallback")
+						trunk = tree
+					end
+				end
+			else
+				trunk = tree
+			end
+
+			if tree:IsA("Model") and tree.PrimaryPart ~= trunk then
+				tree.PrimaryPart = trunk
+				if trunk:IsA("BasePart") then
+					trunk.RootPriority = 10
+				end
+				print("[Level Up Larry] Set PrimaryPart to " .. trunk.Name .. " (" .. trunk.ClassName .. ") for " .. tree.Name .. " at " .. (trunk:IsA("BasePart") and tostring(trunk.Position) or "N/A"))
+			end
+
+			local prompt = trunk:FindFirstChild("WoodcuttingPrompt")
+			if not prompt then
+				prompt = Instance.new("ProximityPrompt")
+				prompt.Name = "WoodcuttingPrompt"
+				prompt.ActionText = "Chop"
+				prompt.ObjectText = tree.Name
+				prompt.MaxActivationDistance = 20
+				prompt.RequiresLineOfSight = false
+				prompt.Enabled = true
+				prompt.Parent = trunk
+				print("[Level Up Larry] Added WoodcuttingPrompt to " .. tree.Name .. " on " .. trunk.Name .. " at " .. (trunk:IsA("BasePart") and tostring(trunk.Position) or "N/A"))
+			else
+				print("[Level Up Larry] Found existing WoodcuttingPrompt on " .. tree.Name)
+			end
+
+			prompt.Triggered:Connect(function()
+				if not isChopping then
+					currentTree = tree
+					logsReceived = 0
+					startTime = tick()
+					isChopping = true
+					progressFrame.Visible = true
+					updateProgressDisplay()
+					print("[Level Up Larry] " .. Player.Name .. " triggered Woodcutting on " .. tree.Name .. " at " .. tostring(Player.Character and Player.Character.HumanoidRootPart.Position or "N/A"))
+					FellEvent:FireServer(tree)
+				end
+			end)
+		end
+	end
+	if not treesFound then
+		warn("[Level Up Larry] No trees (Oak, Willow, Yew) found in Workspace")
+	end
+end
+
+FellEvent.OnClientEvent:Connect(function(itemName, amount)
+	if isChopping and currentTree and (itemName == "Oak Logs" or itemName == "Willow Logs" or itemName == "Yew Logs") then
+		logsReceived = logsReceived + amount
+		updateProgressDisplay()
+	end
+end)
+
+spawn(function()
+	while true do
+		wait(0.1)
+		if isChopping and currentTree then
+			updateProgressDisplay()
+			local character = Player.Character
+			if character and character:FindFirstChild("HumanoidRootPart") and currentTree.PrimaryPart then
+				local distance = (character.HumanoidRootPart.Position - currentTree.PrimaryPart.Position).Magnitude
+				if distance > 15 then
+					stopChopping()
+				end
+			else
+				stopChopping()
+			end
+		end
+	end
+end)
+
+UserInputService.InputBegan:Connect(function(input)
+	if isChopping and input.KeyCode ~= Enum.KeyCode.E and input.KeyCode ~= Enum.KeyCode.Unknown then
+		stopChopping()
+	end
+end)
+
+setupWoodcuttingPrompts()
+game.Workspace.ChildAdded:Connect(function(child)
+	if child.Name == "Oak Tree" or child.Name == "Willow Tree" or child.Name == "Yew Tree" then
+		setupWoodcuttingPrompts()
+	end
+end)
+
+print("[Level Up Larry] Woodcutting initialized")

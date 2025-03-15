@@ -1,0 +1,191 @@
+-- ServerScriptService > GlobalResourceManager
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local DataManager = require(game.ServerScriptService.DataManager)
+local FellEvent = ReplicatedStorage.Actions:WaitForChild("Fell", 5)
+local StopChoppingEvent = ReplicatedStorage.Actions:FindFirstChild("StopChopping") or Instance.new("RemoteEvent")
+if not ReplicatedStorage.Actions:FindFirstChild("StopChopping") then
+	StopChoppingEvent.Name = "StopChopping"
+	StopChoppingEvent.Parent = ReplicatedStorage.Actions
+	print("[Level Up Larry] Created StopChopping RemoteEvent")
+end
+local MineEvent = ReplicatedStorage.Actions:FindFirstChild("Mine") or Instance.new("RemoteEvent")
+if not ReplicatedStorage.Actions:FindFirstChild("Mine") then
+	MineEvent.Name = "Mine"
+	MineEvent.Parent = ReplicatedStorage.Actions
+	print("[Level Up Larry] Created Mine RemoteEvent")
+end
+local AddItemEvent = ReplicatedStorage.Actions:WaitForChild("AddItem", 5)
+
+print("[Level Up Larry] GlobalResourceManager starting")
+
+local SKILL_WOODCUTTING = "Woodcutting"
+local SKILL_MINING = "Mining"
+
+local treeData = {
+	["Oak Tree"] = { Item = "Oak Logs", Difficulty = 37.5, DepletionRate = 8, LevelReq = 1, Xp = 37.5 },
+	["Willow Tree"] = { Item = "Willow Logs", Difficulty = 62.5, DepletionRate = 4, LevelReq = 1, Xp = 67.5 },
+	["Yew Tree"] = { Item = "Yew Logs", Difficulty = 175, DepletionRate = 1, LevelReq = 1, Xp = 175 }
+}
+
+local rockData = {
+	["Copper Rock"] = { Item = "Copper Ore", Difficulty = 17.5, DepletionRate = 8, LevelReq = 1, Xp = 17.5 },
+	["Iron Rock"] = { Item = "Iron Ore", Difficulty = 35, DepletionRate = 4, LevelReq = 15, Xp = 35 }
+}
+
+local axeData = {
+	["BronzeAxe"] = { Strength = 8, LevelReq = 1 },
+	["Iron Axe"] = { Strength = 10, LevelReq = 1 },
+	["Steel Axe"] = { Strength = 12, LevelReq = 6 },
+	["Rune Axe"] = { Strength = 23, LevelReq = 41 }
+}
+
+local pickaxeData = {
+	["Bronze Pickaxe"] = { Strength = 8, LevelReq = 1 },
+	["Iron Pickaxe"] = { Strength = 10, LevelReq = 1 },
+	["Steel Pickaxe"] = { Strength = 12, LevelReq = 6 },
+	["Rune Pickaxe"] = { Strength = 23, LevelReq = 41 }
+}
+
+local activePlayers = {}
+local woodcuttingMultipliers = {}
+
+local function getLevelFromXP(xp)
+	if xp < 0 then return 1 end
+	local points = 0
+	for lvl = 1, 99 do
+		points = points + math.floor(lvl + 300 * (2 ^ (lvl / 7)))
+		if xp < math.floor(points / 4) then
+			return lvl
+		end
+	end
+	return 99
+end
+
+local function getPlayerTool(player, toolType)
+	local inventory = player:FindFirstChild("Inventory") or player.Backpack
+	for _, item in pairs(inventory:GetChildren()) do
+		if toolType == "Axe" and axeData[item.Name] then
+			local multiplier = woodcuttingMultipliers[player.UserId] or 1
+			local strength = axeData[item.Name].Strength * multiplier
+			return item.Name, { Strength = strength, LevelReq = axeData[item.Name].LevelReq }
+		elseif toolType == "Pickaxe" and pickaxeData[item.Name] then
+			return item.Name, pickaxeData[item.Name]
+		end
+	end
+	local defaultAxe = { Strength = 8 * (woodcuttingMultipliers[player.UserId] or 1), LevelReq = 1 }
+	return toolType == "Axe" and "BronzeAxe" or "Bronze Pickaxe", toolType == "Axe" and defaultAxe or pickaxeData["Bronze Pickaxe"]
+end
+
+local function respawnResource(resource)
+	wait(30)
+	if resource then
+		resource:SetAttribute("Depleted", false)
+		resource.PrimaryPart.Transparency = 0
+		print("[Level Up Larry] " .. resource.Name .. " respawned")
+	end
+end
+
+local function resourceCycle(player, resource, skillName)
+	local data = (skillName == SKILL_WOODCUTTING and treeData[resource.Name]) or rockData[resource.Name]
+	if not data then
+		warn("[Level Up Larry] No data for " .. resource.Name)
+		activePlayers[player] = nil
+		return
+	end
+
+	local playerData = DataManager.GetData(player)
+	local skills = playerData.Skills
+	local xp = skills[skillName] or 0
+	local level = getLevelFromXP(xp)
+	if level < data.LevelReq then
+		warn("[Level Up Larry] " .. player.Name .. " level " .. level .. " too low for " .. resource.Name)
+		activePlayers[player] = nil
+		return
+	end
+
+	local tool, toolInfo = getPlayerTool(player, skillName == SKILL_WOODCUTTING and "Axe" or "Pickaxe")
+	if level < toolInfo.LevelReq then
+		warn("[Level Up Larry] " .. player.Name .. " level " .. level .. " too low for " .. tool)
+		activePlayers[player] = nil
+		return
+	end
+
+	local successChance = (toolInfo.Strength + level) / data.Difficulty
+	print("[Level Up Larry] " .. player.Name .. " chopping " .. resource.Name .. " with success chance: " .. successChance)
+
+	while activePlayers[player] == resource do
+		if resource:GetAttribute("Depleted") then
+			activePlayers[player] = nil
+			break
+		end
+		local character = player.Character
+		if not character or not character:FindFirstChild("HumanoidRootPart") or not resource.PrimaryPart then
+			warn("[Level Up Larry] Cannot calculate distance for " .. player.Name .. " - missing character or PrimaryPart")
+			activePlayers[player] = nil
+			break
+		end
+		local distance = (character.HumanoidRootPart.Position - resource.PrimaryPart.Position).Magnitude
+		if distance > 15 then
+			warn("[Level Up Larry] " .. player.Name .. " too far from " .. resource.Name .. " (" .. distance .. " studs)")
+			activePlayers[player] = nil
+			break
+		end
+
+		wait(skillName == SKILL_WOODCUTTING and 2.4 or 1.8)
+		local roll = math.random()
+		print("[Level Up Larry] Roll for " .. player.Name .. ": " .. roll .. " vs " .. successChance)
+		if roll <= successChance then
+			AddItemEvent:FireClient(player, data.Item, 1)
+			if skillName == SKILL_WOODCUTTING then
+				FellEvent:FireClient(player, data.Item, 1)
+			end
+			print("[Level Up Larry] " .. player.Name .. " received 1 " .. data.Item)
+			skills[skillName] = (skills[skillName] or 0) + data.Xp
+			DataManager.SetData(player, playerData)
+
+			local depletionRoll = math.random(0, 99)
+			if depletionRoll <= data.DepletionRate then
+				resource:SetAttribute("Depleted", true)
+				resource.PrimaryPart.Transparency = 1
+				print("[Level Up Larry] " .. resource.Name .. " depleted")
+				spawn(function() respawnResource(resource) end)
+				activePlayers[player] = nil
+				break
+			end
+		end
+	end
+	activePlayers[player] = nil
+end
+
+FellEvent.OnServerEvent:Connect(function(player, tree)
+	print("[Level Up Larry] Received FellEvent from " .. player.Name .. " for " .. tree.Name)
+	if not tree or not tree.Parent or tree:GetAttribute("Depleted") or activePlayers[player] then return end
+	if tree:IsA("Model") and not tree.PrimaryPart then
+		local trunk = tree:FindFirstChild("Trunk") or tree:FindFirstChildWhichIsA("MeshPart")
+		if trunk then
+			tree.PrimaryPart = trunk
+			print("[Level Up Larry] Server set PrimaryPart to " .. trunk.Name .. " for " .. tree.Name)
+		else
+			warn("[Level Up Larry] No Trunk or MeshPart found in " .. tree.Name .. " on server")
+			return
+		end
+	end
+	activePlayers[player] = tree
+	spawn(function() resourceCycle(player, tree, SKILL_WOODCUTTING) end)
+end)
+
+StopChoppingEvent.OnServerEvent:Connect(function(player, tree)
+	print("[Level Up Larry] Received StopChoppingEvent from " .. player.Name .. " for " .. (tree and tree.Name or "nil"))
+	if activePlayers[player] and (not tree or activePlayers[player] == tree) then
+		activePlayers[player] = nil
+	end
+end)
+
+MineEvent.OnServerEvent:Connect(function(player, rock)
+	print("[Level Up Larry] Received MineEvent from " .. player.Name .. " for " .. rock.Name)
+	if not rock or not rock.Parent or rock:GetAttribute("Depleted") or activePlayers[player] then return end
+	activePlayers[player] = rock
+	spawn(function() resourceCycle(player, rock, SKILL_MINING) end)
+end)
+
+print("[Level Up Larry] GlobalResourceManager initialized")

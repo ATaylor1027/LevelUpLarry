@@ -1,0 +1,2 @@
+local humanoid = script.Parent:WaitForChild("Humanoid")
+humanoid.WalkSpeed = 32  -- Default is 16 studs/sec, tweak as needed

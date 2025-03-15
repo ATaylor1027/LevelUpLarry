@@ -1,0 +1,86 @@
+-- ServerScriptService > DataManager
+local DataStoreService = game:GetService("DataStoreService")
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+
+local playerDataStore = DataStoreService:GetDataStore("LevelUpLarryData")
+local playerData = {}
+local dataReady = {}
+
+local function savePlayerData(player)
+	local userId = player.UserId
+	local data = playerData[userId]
+	if data then
+		local success, err = pcall(function()
+			playerDataStore:SetAsync(userId, data)
+		end)
+		if not success then
+			warn("[Level Up Larry] Failed to save data for " .. player.Name .. ": " .. err)
+		else
+			print("[Level Up Larry] Saved data for " .. player.Name)
+		end
+	end
+end
+
+local function loadPlayerData(player)
+	local userId = player.UserId
+	local success, data = pcall(function()
+		return playerDataStore:GetAsync(userId)
+	end)
+	if success and data then
+		playerData[userId] = data
+		print("[Level Up Larry] Loaded data for " .. player.Name)
+	else
+		-- Manually create default skills table
+		local defaultSkills = {
+			Woodcutting = 0,  -- Level 1
+			Mining = 0,       -- Level 1
+			Fishing = 0,      -- Level 1 (future-proof)
+			Cooking = 0,      -- Level 1 (future-proof)
+			Hitpoints = 1154  -- Level 10
+		}
+		playerData[userId] = {
+			Inventory = {},
+			Bank = {},
+			Skills = defaultSkills,
+			Playtime = 0
+		}
+		print("[Level Up Larry] Created new data for " .. player.Name .. " with default skills")
+	end
+	dataReady[userId] = true
+	return playerData[userId]
+end
+
+Players.PlayerAdded:Connect(function(player)
+	loadPlayerData(player)
+end)
+
+Players.PlayerRemoving:Connect(function(player)
+	savePlayerData(player)
+	playerData[player.UserId] = nil
+	dataReady[player.UserId] = nil
+end)
+
+game:BindToClose(function()
+	for _, player in pairs(Players:GetPlayers()) do
+		savePlayerData(player)
+	end
+end)
+
+local function waitForData(player)
+	local userId = player.UserId
+	while not dataReady[userId] do
+		RunService.Heartbeat:Wait()
+	end
+end
+
+return {
+	GetData = function(player)
+		waitForData(player)
+		return playerData[player.UserId]
+	end,
+	SetData = function(player, data)
+		waitForData(player)
+		playerData[player.UserId] = data
+	end
+}

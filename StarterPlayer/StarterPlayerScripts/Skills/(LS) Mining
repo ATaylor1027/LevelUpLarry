@@ -1,0 +1,43 @@
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local MineEvent = ReplicatedStorage.Actions:WaitForChild("Mine", 5)
+
+print("[Level Up Larry] Mining starting")
+
+local function setupMiningPrompts()
+	local rocksFound = false
+	for _, rock in pairs(game.Workspace:GetChildren()) do
+		if rock.Name == "Copper Rock" or rock.Name == "Iron Rock" then
+			rocksFound = true
+			local prompt = rock:FindFirstChild("MiningPrompt")
+			if not prompt then
+				prompt = Instance.new("ProximityPrompt")
+				prompt.Name = "MiningPrompt"
+				prompt.ActionText = "Mine"
+				prompt.ObjectText = rock.Name
+				prompt.MaxActivationDistance = 5
+				prompt.RequiresLineOfSight = false
+				prompt.Parent = rock
+				print("[Level Up Larry] Added MiningPrompt to " .. rock.Name)
+			else
+				print("[Level Up Larry] Found existing MiningPrompt on " .. rock.Name)
+			end
+			prompt.Triggered:Connect(function(player)
+				print("[Level Up Larry] " .. player.Name .. " triggered Mining on " .. rock.Name)
+				MineEvent:FireServer(rock)
+			end)
+		end
+	end
+	if not rocksFound then
+		warn("[Level Up Larry] No rocks (Copper, Iron) found in Workspace")
+	end
+end
+
+setupMiningPrompts()
+game.Workspace.ChildAdded:Connect(function(child)
+	if child.Name == "Copper Rock" or child.Name == "Iron Rock" then
+		setupMiningPrompts()
+	end
+end)
+
+print("[Level Up Larry] Mining initialized")
