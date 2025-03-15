@@ -1,0 +1,7 @@
+local Keybinds = {
+	InventoryToggle = Enum.KeyCode.C,  -- Inventory only
+	ChopTree = Enum.KeyCode.E,
+	BankToggle = Enum.KeyCode.B       -- Bank toggle (optional, when near)
+}
+
+return Keybinds

@@ -1,0 +1,25 @@
+-- ReplicatedStorage > Configs > SkillNicknames
+local SkillNicknames = {
+	["Attack"] = "Att",
+	["Strength"] = "Str",
+	["Defence"] = "Def",
+	["Ranged"] = "Range",
+	["Prayer"] = "Pray",
+	["Magic"] = "Mage",
+	["Runecrafting"] = "RC",
+	["Hitpoints"] = "HP",
+	["Crafting"] = "Craft",
+	["Mining"] = "Mine",
+	["Smithing"] = "Smith",
+	["Fishing"] = "Fish",
+	["Cooking"] = "Cook",
+	["Firemaking"] = "FM",
+	["Woodcutting"] = "WC",
+	["Agility"] = "Agil",
+	["Herblore"] = "Herb",
+	["Thieving"] = "Thief",
+	["Fletching"] = "Fletch",
+	["Slayer"] = "Slay"
+}
+
+return SkillNicknames
