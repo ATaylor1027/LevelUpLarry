@@ -1,0 +1,27 @@
+-- StarterPlayer/StarterPlayerScripts/CommandStuff/ChatMuteHandler (LocalScript)
+local Players = game:GetService("Players")
+local TextChatService = game:GetService("TextChatService")
+local Player = Players.LocalPlayer
+
+-- Wait for DataManager to replicate IsMuted
+local function getIsMuted()
+	local data = Player:WaitForChild("Data", 10) -- Folder to hold player data
+	if data then
+		return data:WaitForChild("IsMuted", 5).Value
+	end
+	return false -- Default to unmuted if data isn’t found
+end
+
+TextChatService.OnIncomingMessage = function(messageData)
+	local properties = Instance.new("TextChatMessageProperties")
+	-- Use messageData.Text (correct property for TextChatMessage)
+	properties.Text = messageData.Text or ""
+
+	-- Check if the message is from the local player using TextSource
+	if messageData.TextSource and messageData.TextSource.UserId == Player.UserId then
+		if getIsMuted() then
+			properties.Text = "" -- Suppress the player's own message if muted
+		end
+	end
+	return properties -- Return TextChatMessageProperties instance
+end

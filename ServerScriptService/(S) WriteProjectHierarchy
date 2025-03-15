@@ -1,0 +1,122 @@
+-- Lua script to write Roblox project hierarchy to a StringValue in Workspace
+local HttpService = game:GetService("HttpService")
+local Workspace = game:GetService("Workspace")
+
+local function writeProjectHierarchy(outputObjectName, root, ignoreList)
+	-- Default ignore list for common Roblox objects you might want to skip
+	ignoreList = ignoreList or {
+		"Terrain",
+		"Camera",
+		"Chat",
+		"InsertService",
+		"RunService",
+		"ReplicatedFirst"
+	}
+
+	local function shouldIgnore(obj)
+		-- Check if object should be ignored based on name or class
+		for _, ignored in ipairs(ignoreList) do
+			if obj.Name == ignored or obj.ClassName == ignored then
+				return true
+			end
+		end
+		return false
+	end
+
+	local function printObjectContents(obj, prefix, fileLines)
+		if shouldIgnore(obj) then
+			return
+		end
+
+		-- Get children of the object
+		local children = obj:GetChildren()
+		table.sort(children, function(a, b)
+			return a.Name < b.Name
+		end)
+
+		-- Separate services/instances (treat services like directories)
+		local directories = {}
+		local files = {}
+		for _, child in ipairs(children) do
+			if child:IsA("Service") or #child:GetChildren() > 0 then
+				table.insert(directories, child)
+			else
+				table.insert(files, child)
+			end
+		end
+
+		-- Process directories (services or containers)
+		for i, dir in ipairs(directories) do
+			if not shouldIgnore(dir) then
+				local isLast = (i == #directories) and #files == 0
+				local line = prefix .. (isLast and "└── " or "├── ") .. dir.Name .. "/"
+				table.insert(fileLines, line)
+				local newPrefix = prefix .. (isLast and "    " or "│   ")
+				printObjectContents(dir, newPrefix, fileLines)
+			end
+		end
+
+		-- Process files (non-container instances)
+		for i, file in ipairs(files) do
+			if not shouldIgnore(file) then
+				local isLast = i == #files
+				local line = prefix .. (isLast and "└── " or "├── ") .. file.Name
+				table.insert(fileLines, line)
+			end
+		end
+	end
+
+	-- Collect all lines in a table
+	local fileLines = {}
+
+	-- Add header with timestamp
+	local timestamp = os.date("%Y-%m-%d %H:%M:%S")
+	table.insert(fileLines, "Project Hierarchy - Generated on " .. timestamp)
+	table.insert(fileLines, "Root: " .. root.Name)
+	table.insert(fileLines, string.rep("=", 50))
+	table.insert(fileLines, "")
+
+	-- Add root name
+	table.insert(fileLines, root.Name .. "/")
+
+	-- Generate hierarchy
+	printObjectContents(root, "", fileLines)
+
+	-- Create a StringValue in Workspace to store the output
+	local outputText = table.concat(fileLines, "\n")
+
+	-- Check if the StringValue already exists, and remove it if so
+	local existingValue = Workspace:FindFirstChild(outputObjectName)
+	if existingValue then
+		existingValue:Destroy()
+	end
+
+	-- Create a new StringValue
+	local stringValue = Instance.new("StringValue")
+	stringValue.Name = outputObjectName
+	stringValue.Value = outputText
+	stringValue.Parent = Workspace
+
+	print("Project hierarchy has been written to a StringValue named '" .. outputObjectName .. "' in Workspace")
+	print("To view the hierarchy, check the Value property of '" .. outputObjectName .. "' in Workspace")
+end
+
+-- Example usage
+local customIgnore = {
+	"Chat", "InsertService", "RunService",
+	"Stats", "AdService", "AnalyticsService", "AnimationClipProvider", "AssetService", -- Existing ignores
+	"AvatarCreationService", "BadgeService", "BrowserService", "CaptureService", -- Add more services
+	"ChangeHistoryService", "ClusterPacketCache", "CollectionService", "CommerceService",
+	"ConfigureServerService", "ContentProvider", "ContextActionService", "CookiesService",
+	"Debris", "FriendService", "GamePassService", "GeometryService", "GuidRegistryService",
+	"HeapProfilerService", "HttpRbxApiService", "HttpService", "JointsService", "KeyboardService",
+	"KeyframeSequenceProvider", "LocalizationService", "LogService", "LuaWebService",
+	"MarketplaceService", "MaterialService", "MouseService", "NetworkServer", "NotificationService",
+	"PathfindingService", "PermissionsService", "PhysicsService", "Players", "PointsService",
+	"PolicyService", "ProcessInstancePhysicsService", "ProximityPromptService", "RemoteDebuggerServer",
+	"Script Context", "ScriptProfilerService", "ScriptService", "Selection", "SelectionHighlightManager",
+	"ServiceVisibilityService", "SharedTableRegistry", "SocialService", "SoundService", "SpawnerService", "Teams", "Teleport Service", "TestService", "TextService", "TimerService",
+	"TouchInputService", "TweenService", "UserInputService", "VRService", "VideoCaptureService",
+	"VideoService", "VirtualInputManager", "VoiceChatService"
+}
+writeProjectHierarchy("ProjectHierarchyOutput", game, customIgnore)

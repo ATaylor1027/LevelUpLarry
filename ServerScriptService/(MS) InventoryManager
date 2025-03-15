@@ -1,0 +1,217 @@
+-- ServerScriptService/InventoryManager
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
+local DataManager = require(script.Parent:WaitForChild("DataManager"))
+local ItemDatabase = require(ReplicatedStorage.Configs:WaitForChild("ItemDatabase"))
+local AddItemEvent = ReplicatedStorage.Actions:WaitForChild("AddItem", 5)
+local RearrangeInventoryEvent = Instance.new("RemoteEvent")
+local EquipItemEvent = Instance.new("RemoteEvent")
+local DropItemEvent = Instance.new("RemoteEvent")
+local UpdateInventoryEvent = Instance.new("RemoteEvent")
+
+RearrangeInventoryEvent.Name = "RearrangeInventory"
+RearrangeInventoryEvent.Parent = ReplicatedStorage.Actions
+EquipItemEvent.Name = "EquipItem"
+EquipItemEvent.Parent = ReplicatedStorage.Actions
+DropItemEvent.Name = "DropItem"
+DropItemEvent.Parent = ReplicatedStorage.Actions
+UpdateInventoryEvent.Name = "UpdateInventory"
+UpdateInventoryEvent.Parent = ReplicatedStorage.Actions
+
+local InventoryManager = {}
+
+local MAX_SLOTS = 28
+
+-- Function to initialize a player's inventory
+local function initializeInventory(player)
+	local data = DataManager.GetData(player)
+	if not data then
+		warn("[Level Up Larry] Failed to get data for " .. player.Name .. " in InventoryManager")
+		return
+	end
+	if not data.Inventory then
+		data.Inventory = {}
+		for i = 1, MAX_SLOTS do
+			data.Inventory[i] = nil
+		end
+		DataManager.SetData(player, data)
+	end
+	if not data.Equipment then
+		data.Equipment = {} -- For equipped items
+		DataManager.SetData(player, data)
+	end
+end
+
+-- Function to add an item to a player's inventory
+function InventoryManager.AddItem(player, itemId, amount)
+	local data = DataManager.GetData(player)
+	if not data then
+		warn("[Level Up Larry] Failed to get data for " .. player.Name .. " in InventoryManager")
+		return false
+	end
+	local inventory = data.Inventory
+	local item = ItemDatabase[itemId]
+	if not item then
+		warn("[Level Up Larry] Invalid item ID: " .. tostring(itemId))
+		return false
+	end
+
+	if item.stackable then
+		-- Try to stack with existing items
+		for i = 1, MAX_SLOTS do
+			if inventory[i] and inventory[i].itemId == itemId then
+				inventory[i].quantity = inventory[i].quantity + amount
+				DataManager.SetData(player, data)
+				AddItemEvent:FireClient(player, inventory, data.Equipment)
+				print("[Level Up Larry] Server: Stacked " .. item.name .. " x" .. amount .. " in slot " .. i .. " for " .. player.Name)
+				return true
+			end
+		end
+	end
+
+	-- Find an empty slot
+	for i = 1, MAX_SLOTS do
+		if not inventory[i] then
+			inventory[i] = {itemId = itemId, quantity = amount}
+			DataManager.SetData(player, data)
+			AddItemEvent:FireClient(player, inventory, data.Equipment)
+			print("[Level Up Larry] Server: Added " .. item.name .. " x" .. amount .. " to slot " .. i .. " for " .. player.Name)
+			return true
+		end
+	end
+
+	print("[Level Up Larry] Server: Inventory full for " .. player.Name)
+	return false
+end
+
+-- Function to rearrange inventory (for drag-and-drop)
+function InventoryManager.RearrangeInventory(player, fromSlot, toSlot)
+	local data = DataManager.GetData(player)
+	if not data then
+		warn("[Level Up Larry] Failed to get data for " .. player.Name .. " in InventoryManager")
+		return false
+	end
+	local inventory = data.Inventory
+	if fromSlot < 1 or fromSlot > MAX_SLOTS or toSlot < 1 or toSlot > MAX_SLOTS then
+		warn("[Level Up Larry] Invalid slot indices for " .. player.Name)
+		return false
+	end
+
+	local temp = inventory[toSlot]
+	inventory[toSlot] = inventory[fromSlot]
+	inventory[fromSlot] = temp
+	DataManager.SetData(player, data)
+	AddItemEvent:FireClient(player, inventory, data.Equipment)
+	print("[Level Up Larry] Server: Rearranged inventory for " .. player.Name .. " from slot " .. fromSlot .. " to " .. toSlot)
+	return true
+end
+
+-- Function to equip an item
+function InventoryManager.EquipItem(player, slotIndex)
+	local data = DataManager.GetData(player)
+	if not data then
+		warn("[Level Up Larry] Failed to get data for " .. player.Name .. " in InventoryManager")
+		return false
+	end
+	local inventory = data.Inventory
+	local equipment = data.Equipment
+	if not inventory[slotIndex] then
+		warn("[Level Up Larry] No item in slot " .. slotIndex .. " for " .. player.Name)
+		return false
+	end
+
+	local item = ItemDatabase[inventory[slotIndex].itemId]
+	if not item.equipSlot then
+		warn("[Level Up Larry] Item " .. item.name .. " is not equippable for " .. player.Name)
+		return false
+	end
+
+	-- Check requirements (e.g., attack level)
+	if item.requirements then
+		local skills = data.Skills or {}
+		for skill, level in pairs(item.requirements) do
+			if (skills[skill] or 0) < level then
+				warn("[Level Up Larry] " .. player.Name .. " does not meet requirements for " .. item.name)
+				return false
+			end
+		end
+	end
+
+	-- Unequip existing item in the same slot, if any
+	if equipment[item.equipSlot] then
+		local oldItem = ItemDatabase[equipment[item.equipSlot].itemId]
+		InventoryManager.AddItem(player, equipment[item.equipSlot].itemId, 1)
+	end
+
+	-- Equip the new item
+	equipment[item.equipSlot] = {itemId = item.id, quantity = 1}
+	inventory[slotIndex] = nil
+	DataManager.SetData(player, data)
+	AddItemEvent:FireClient(player, inventory, data.Equipment)
+	print("[Level Up Larry] Server: Equipped " .. item.name .. " for " .. player.Name)
+	return true
+end
+
+-- Function to drop an item
+function InventoryManager.DropItem(player, slotIndex)
+	local data = DataManager.GetData(player)
+	if not data then
+		warn("[Level Up Larry] Failed to get data for " .. player.Name .. " in InventoryManager")
+		return false
+	end
+	local inventory = data.Inventory
+	if not inventory[slotIndex] then
+		warn("[Level Up Larry] No item in slot " .. slotIndex .. " for " .. player.Name)
+		return false
+	end
+
+	local item = ItemDatabase[inventory[slotIndex].itemId]
+	inventory[slotIndex] = nil
+	DataManager.SetData(player, data)
+	AddItemEvent:FireClient(player, inventory, data.Equipment)
+	print("[Level Up Larry] Server: Dropped " .. item.name .. " for " .. player.Name)
+	return true
+end
+
+-- Handle player added
+Players.PlayerAdded:Connect(function(player)
+	initializeInventory(player)
+end)
+
+-- Handle remote events
+AddItemEvent.OnServerEvent:Connect(function(player, itemId, amount)
+	if itemId and amount then -- Check if arguments are provided
+		if type(itemId) ~= "number" or type(amount) ~= "number" or amount <= 0 then
+			warn("[Level Up Larry] Invalid item addition attempt by " .. player.Name)
+			return
+		end
+		InventoryManager.AddItem(player, itemId, amount)
+	else
+		-- If no arguments, send current inventory state
+		local data = DataManager.GetData(player)
+		if data then
+			AddItemEvent:FireClient(player, data.Inventory, data.Equipment)
+		end
+	end
+end)
+
+RearrangeInventoryEvent.OnServerEvent:Connect(function(player, fromSlot, toSlot)
+	InventoryManager.RearrangeInventory(player, fromSlot, toSlot)
+end)
+
+EquipItemEvent.OnServerEvent:Connect(function(player, slotIndex)
+	InventoryManager.EquipItem(player, slotIndex)
+end)
+
+DropItemEvent.OnServerEvent:Connect(function(player, slotIndex)
+	InventoryManager.DropItem(player, slotIndex)
+end)
+
+UpdateInventoryEvent.OnServerEvent:Connect(function(player)
+	local data = DataManager.GetData(player)
+	if data then
+		AddItemEvent:FireClient(player, data.Inventory, data.Equipment)
+	end
+end)
+
+return InventoryManager

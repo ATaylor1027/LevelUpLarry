@@ -1,6 +1,32 @@
+-- ReplicatedStorage/Configs/ItemDatabase
 local ItemDatabase = {
-	["Oak Logs"] = { Icon = "rbxassetid://1234567890", Stackable = true },
-	["Copper Ore"] = { Icon = "rbxassetid://1234567891", Stackable = true },
-	["Bronze Axe"] = { Icon = "rbxassetid://1234567892", Stackable = false }
+	[1] = {
+		id = 1,
+		name = "Oak Logs",
+		icon = "rbxassetid://1234567890",
+		stackable = true,
+		examine = "Logs cut from an oak tree.",
+		tradeable = true
+	},
+	[2] = {
+		id = 2,
+		name = "Copper Ore",
+		icon = "rbxassetid://1234567891",
+		stackable = true,
+		examine = "Ore containing copper.",
+		tradeable = true
+	},
+	[3] = {
+		id = 3,
+		name = "Bronze Axe",
+		icon = "rbxassetid://1234567892",
+		stackable = false,
+		examine = "A bronze axe for chopping trees.",
+		tradeable = true,
+		equipSlot = "Weapon",
+		bonuses = {attackStab = 4, attackSlash = 2, attackCrush = 0, strength = 5},
+		requirements = {attack = 1}
+	}
 }
+
 return ItemDatabase

@@ -1,0 +1,249 @@
+-- ServerScriptService/CommandHandler
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
+local ChatService = game:GetService("TextChatService")
+
+local InventoryManager = require(script.Parent:WaitForChild("InventoryManager", 10)) or error("Failed to load InventoryManager")
+local BankManager = require(script.Parent:WaitForChild("BankManager", 10)) or error("Failed to load BankManager")
+local SkillManager = require(script.Parent:WaitForChild("SkillManager", 10)) or error("Failed to load SkillManager")
+local DataManager = require(script.Parent:WaitForChild("DataManager", 10)) or error("Failed to load DataManager")
+
+local Actions = ReplicatedStorage:WaitForChild("Actions")
+local CommandEvent = Actions:FindFirstChild("CommandEvent") or Instance.new("RemoteEvent")
+CommandEvent.Name = "CommandEvent"
+CommandEvent.Parent = Actions
+local GetBankItemsEvent = Actions:WaitForChild("GetBankItems")
+local ToggleBankEvent = Actions:WaitForChild("ToggleBank")
+local GetPermissionLevelFunction = Actions:FindFirstChild("GetPermissionLevel") or Instance.new("RemoteFunction")
+GetPermissionLevelFunction.Name = "GetPermissionLevel"
+GetPermissionLevelFunction.Parent = Actions
+
+print("[CommandHandler] Created CommandEvent")
+
+local PERMISSION_LEVELS = {
+	PLAYER = 1,
+	MODERATOR = 50,
+	ADMIN = 100
+}
+
+local USER_PERMISSIONS = {
+	["alex12078945"] = PERMISSION_LEVELS.ADMIN,
+}
+
+local DEFAULT_PERMISSION = PERMISSION_LEVELS.PLAYER
+
+local Commands = {}
+
+local function getPermissionLevel(player)
+	return USER_PERMISSIONS[player.Name] or USER_PERMISSIONS[tostring(player.UserId)] or DEFAULT_PERMISSION
+end
+
+local function hasPermission(player, requiredLevel)
+	return getPermissionLevel(player) >= requiredLevel
+end
+
+local function logCommand(player, command, args)
+	print("[CommandHandler] " .. player.Name .. " (Level " .. getPermissionLevel(player) .. ") executed: " .. command .. " " .. (args and table.concat(args, " ") or ""))
+end
+
+local function sendFeedback(player, message)
+	CommandEvent:FireClient(player, "Feedback", message)
+end
+
+GetPermissionLevelFunction.OnServerInvoke = function(player)
+	return getPermissionLevel(player)
+end
+
+Commands["additem"] = {
+	Description = "Adds an item to the player's inventory. Usage: /additem <itemId> <amount>",
+	PermissionLevel = PERMISSION_LEVELS.ADMIN,
+	Execute = function(player, args)
+		if not hasPermission(player, Commands["additem"].PermissionLevel) then
+			sendFeedback(player, "You need permission level " .. Commands["additem"].PermissionLevel .. " to use this command.")
+			return
+		end
+		local itemId = tonumber(args[1])
+		local amount = tonumber(args[2]) or 1
+		if not itemId then
+			sendFeedback(player, "Invalid item ID. Usage: /additem <itemId> <amount>")
+			return
+		end
+		if InventoryManager.AddItem(player, itemId, amount) then
+			sendFeedback(player, "Added item " .. itemId .. " x" .. amount .. " to your inventory.")
+		else
+			sendFeedback(player, "Failed to add item (inventory full or invalid ID).")
+		end
+		logCommand(player, "additem", args)
+	end
+}
+
+Commands["bankspace"] = {
+	Description = "Sets the bank space limit per tab. Usage: /bankspace <maxSlots>",
+	PermissionLevel = PERMISSION_LEVELS.ADMIN,
+	Execute = function(player, args)
+		if not hasPermission(player, Commands["bankspace"].PermissionLevel) then
+			sendFeedback(player, "You need permission level " .. Commands["bankspace"].PermissionLevel .. " to use this command.")
+			return
+		end
+		local maxSlots = tonumber(args[1])
+		if not maxSlots or maxSlots <= 0 then
+			sendFeedback(player, "Invalid slot count. Usage: /bankspace <maxSlots>")
+			return
+		end
+		local originalMax = BankManager.MAX_SLOTS_PER_TAB or 800
+		BankManager.MAX_SLOTS_PER_TAB = maxSlots
+		sendFeedback(player, "Bank space per tab set to " .. maxSlots .. " (was " .. originalMax .. ").")
+		logCommand(player, "bankspace", args)
+	end
+}
+
+Commands["mute"] = {
+	Description = "Mutes a player. Usage: /mute <playerName>",
+	PermissionLevel = PERMISSION_LEVELS.MODERATOR,
+	Execute = function(player, args)
+		if not hasPermission(player, Commands["mute"].PermissionLevel) then
+			sendFeedback(player, "You need permission level " .. Commands["mute"].PermissionLevel .. " to use this command.")
+			return
+		end
+		local targetName = args[1]
+		local target = Players:FindFirstChild(targetName)
+		if not target then
+			sendFeedback(player, "Player " .. targetName .. " not found.")
+			return
+		end
+		local data = DataManager.GetData(target)
+		data.IsMuted = true
+		DataManager.SetData(target, data)
+		sendFeedback(player, "Muted " .. target.Name .. ".")
+		sendFeedback(target, "You have been muted by an admin.")
+		logCommand(player, "mute", args)
+	end
+}
+
+Commands["unmute"] = {
+	Description = "Unmutes a player. Usage: /unmute <playerName>",
+	PermissionLevel = PERMISSION_LEVELS.MODERATOR,
+	Execute = function(player, args)
+		if not hasPermission(player, Commands["unmute"].PermissionLevel) then
+			sendFeedback(player, "You need permission level " .. Commands["unmute"].PermissionLevel .. " to use this command.")
+			return
+		end
+		local targetName = args[1]
+		local target = Players:FindFirstChild(targetName)
+		if not target then
+			sendFeedback(player, "Player " .. targetName .. " not found.")
+			return
+		end
+		local data = DataManager.GetData(target)
+		data.IsMuted = false
+		DataManager.SetData(target, data)
+		sendFeedback(player, "Unmuted " .. target.Name .. ".")
+		sendFeedback(target, "You have been unmuted by an admin.")
+		logCommand(player, "unmute", args)
+	end
+}
+
+Commands["xp"] = {
+	Description = "Adds XP to a skill. Usage: /xp <skillName> <amount>",
+	PermissionLevel = PERMISSION_LEVELS.ADMIN,
+	Execute = function(player, args)
+		if not hasPermission(player, Commands["xp"].PermissionLevel) then
+			sendFeedback(player, "You need permission level " .. Commands["xp"].PermissionLevel .. " to use this command.")
+			return
+		end
+		local skillName = args[1]
+		local amount = tonumber(args[2])
+		if not skillName or not amount or amount <= 0 then
+			sendFeedback(player, "Invalid arguments. Usage: /xp <skillName> <amount>")
+			return
+		end
+		SkillManager.AddXP(player, skillName, amount)
+		sendFeedback(player, "Added " .. amount .. " XP to " .. skillName .. ".")
+		logCommand(player, "xp", args)
+	end
+}
+
+Commands["bank"] = {
+	Description = "Opens the player's bank. Usage: /bank",
+	PermissionLevel = PERMISSION_LEVELS.PLAYER,
+	Execute = function(player, args)
+		if not hasPermission(player, Commands["bank"].PermissionLevel) then
+			sendFeedback(player, "You need permission level " .. Commands["bank"].PermissionLevel .. " to use this command.")
+			return
+		end
+		local data = DataManager.GetData(player)
+		if not data then
+			sendFeedback(player, "Failed to retrieve player data.")
+			return
+		end
+		if not data.Bank then
+			data.Bank = {tabs = {}, placeholders = {}}
+			print("[CommandHandler] Initialized missing Bank for " .. player.Name)
+		end
+		if not data.Bank.tabs then
+			data.Bank.tabs = {}
+			print("[CommandHandler] Initialized missing Bank.tabs for " .. player.Name)
+		end
+		if not data.Bank.tabs[1] then
+			data.Bank.tabs[1] = {}
+			for i = 1, BankManager.MAX_SLOTS_PER_TAB or 800 do
+				data.Bank.tabs[1][i] = nil
+			end
+			print("[CommandHandler] Initialized missing Bank.tabs[1] for " .. player.Name)
+		end
+		DataManager.SetData(player, data)
+		local bank = data.Bank.tabs[1]
+		local itemCount = 0
+		for _ in pairs(bank) do itemCount = itemCount + 1 end
+		ToggleBankEvent:FireClient(player, true) -- Open the bank GUI
+		GetBankItemsEvent:FireClient(player, data.Bank.tabs, 1)
+		sendFeedback(player, "Bank opened with " .. itemCount .. " items in tab 1.")
+		logCommand(player, "bank", args)
+	end
+}
+
+Commands["help"] = {
+	Description = "Lists available commands. Usage: /help",
+	PermissionLevel = PERMISSION_LEVELS.PLAYER,
+	Execute = function(player, args)
+		if not hasPermission(player, Commands["help"].PermissionLevel) then
+			sendFeedback(player, "You need permission level " .. Commands["help"].PermissionLevel .. " to use this command.")
+			return
+		end
+		local playerLevel = getPermissionLevel(player)
+		local helpText = "Available commands:\n"
+		for cmdName, cmdData in pairs(Commands) do
+			if hasPermission(player, cmdData.PermissionLevel) then
+				helpText = helpText .. "/" .. cmdName .. " - " .. cmdData.Description .. " (Level " .. cmdData.PermissionLevel .. ")\n"
+			end
+		end
+		sendFeedback(player, helpText)
+		logCommand(player, "help", args)
+	end
+}
+
+local function processCommand(player, message)
+	if message:sub(1, 1) ~= "/" then return end
+	local args = message:sub(2):split(" ")
+	local commandName = args[1]:lower()
+	table.remove(args, 1)
+
+	local command = Commands[commandName]
+	if command then
+		command.Execute(player, args)
+	else
+		sendFeedback(player, "Unknown command: " .. commandName .. ". Use /help for a list of commands.")
+	end
+end
+
+Players.PlayerAdded:Connect(function(player)
+	player.Chatted:Connect(function(message)
+		processCommand(player, message)
+	end)
+end)
+
+CommandEvent.OnServerEvent:Connect(function(player, command, args)
+	processCommand(player, "/" .. command .. " " .. (args and table.concat(args, " ") or ""))
+end)
+
+print("[CommandHandler] Initialized")

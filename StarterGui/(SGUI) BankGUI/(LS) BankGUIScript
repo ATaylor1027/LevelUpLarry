@@ -1,25 +1,20 @@
--- StarterGui > BankGUI > BankGUIScript
+-- StarterGui/BankGUI/BankGUIScript
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService = game:GetService("UserInputService")
+local ContextActionService = game:GetService("ContextActionService")
 local Player = Players.LocalPlayer
 local PlayerGui = Player:WaitForChild("PlayerGui")
 
 local Actions = ReplicatedStorage:WaitForChild("Actions")
 local ToggleBankEvent = Actions:WaitForChild("ToggleBank")
-local BankItemsEvent = Actions:FindFirstChild("BankItems") or Instance.new("RemoteEvent")
-local DepositItemEvent = Actions:FindFirstChild("DepositItem") or Instance.new("RemoteEvent")
-
-if not Actions:FindFirstChild("BankItems") then
-	BankItemsEvent.Name = "BankItems"
-	BankItemsEvent.Parent = Actions
-	print("[Level Up Larry] Created BankItems RemoteEvent")
-end
-if not Actions:FindFirstChild("DepositItem") then
-	DepositItemEvent.Name = "DepositItem"
-	DepositItemEvent.Parent = Actions
-	print("[Level Up Larry] Created DepositItem RemoteEvent")
-end
+local GetBankItemsEvent = Actions:WaitForChild("GetBankItems")
+local DepositItemEvent = Actions:WaitForChild("DepositItemEvent")
+local WithdrawItemEvent = Actions:WaitForChild("WithdrawItem")
+local RearrangeBankEvent = Actions:WaitForChild("RearrangeBank")
+local SetPlaceholderEvent = Actions:WaitForChild("SetPlaceholder")
+local GetPermissionLevelFunction = Actions:WaitForChild("GetPermissionLevel")
+local ItemDatabase = require(ReplicatedStorage:WaitForChild("Configs"):WaitForChild("ItemDatabase"))
 
 print("[Level Up Larry] BankGUIScript starting")
 
@@ -29,237 +24,489 @@ screenGui.ResetOnSpawn = false
 screenGui.Parent = PlayerGui
 screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 
-local bankFrame = Instance.new("Frame")
-bankFrame.Name = "BankFrame"
-bankFrame.Size = UDim2.new(0, 800, 0, 630)
-bankFrame.Position = UDim2.new(0, 250, 0.5, -315)
-bankFrame.BackgroundColor3 = Color3.fromRGB(62, 53, 41)
-bankFrame.BorderSizePixel = 0
-bankFrame.Visible = false
-bankFrame.Parent = screenGui
-print("[BankGUI] Created BankFrame at position {0, 250}, {0.5, -315}, size {0, 800}, {0, 630}")
-
-local depositButton = Instance.new("TextButton")
-depositButton.Name = "DepositButton"
-depositButton.Size = UDim2.new(0, 100, 0, 40)
-depositButton.Position = UDim2.new(0, 10, 0, 10)
-depositButton.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
-depositButton.Text = "Deposit All"
-depositButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-depositButton.ZIndex = 2
-depositButton.Parent = bankFrame
-print("[Level Up Larry] Created DepositButton")
-
-local slotsLabel = Instance.new("TextLabel")
-slotsLabel.Name = "SlotsLabel"
-slotsLabel.Size = UDim2.new(0, 200, 0, 30)
-slotsLabel.Position = UDim2.new(0, 120, 0, 15)
-slotsLabel.BackgroundTransparency = 1
-slotsLabel.Text = "Slots: 0/252"
-slotsLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-slotsLabel.ZIndex = 2
-slotsLabel.Parent = bankFrame
-print("[Level Up Larry] Created SlotsLabel")
-
-local bankTitle = Instance.new("TextButton")
-bankTitle.Name = "BankTitle"
-bankTitle.Size = UDim2.new(0, 200, 0, 50)
-bankTitle.Position = UDim2.new(0.5, -100, 0, -50)
-bankTitle.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-bankTitle.Text = "Bank of Level Up Larry"
-bankTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
-bankTitle.ZIndex = 2
-bankTitle.Parent = bankFrame
-print("[Level Up Larry] Created BankTitle")
-
-local bankScroll = Instance.new("ScrollingFrame")
-bankScroll.Name = "BankScroll"
-bankScroll.Size = UDim2.new(0, 720, 0, 550)
-bankScroll.Position = UDim2.new(0, 40, 0, 60)
-bankScroll.BackgroundTransparency = 1
-bankScroll.ScrollBarThickness = 8
-bankScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
-bankScroll.Parent = bankFrame
-print("[Level Up Larry] Created BankScroll")
-
-local bankGrid = Instance.new("Frame")
-bankGrid.Name = "BankGrid"
-bankGrid.Size = UDim2.new(0, 720, 0, 0)
-bankGrid.BackgroundTransparency = 1
-bankGrid.Parent = bankScroll
-print("[Level Up Larry] Created BankGrid with width 720")
-
-local uiGrid = Instance.new("UIGridLayout")
-uiGrid.Parent = bankGrid
-uiGrid.CellSize = UDim2.new(0, 50, 0, 50)
-uiGrid.CellPadding = UDim2.new(0, 10, 0, 10)
-uiGrid.FillDirection = Enum.FillDirection.Horizontal
-uiGrid.HorizontalAlignment = Enum.HorizontalAlignment.Left
-uiGrid.VerticalAlignment = Enum.VerticalAlignment.Top
-uiGrid.SortOrder = Enum.SortOrder.LayoutOrder
-uiGrid.FillDirectionMaxCells = 12
-print("[Level Up Larry] UIGridLayout created with 12 slots per row")
-
+local bankFrame
+local tabsFrame
+local contentFrame
+local inventoryGrid
 local bankSlots = {}
-local bankItems = {}
-local MAX_SLOTS = 252
-for i = 1, MAX_SLOTS do
-	local slot = Instance.new("Frame")
-	slot.Name = "BankSlot" .. i
-	slot.Size = UDim2.new(0, 50, 0, 50)
-	slot.BackgroundColor3 = Color3.fromRGB(205, 174, 121)
-	slot.BorderSizePixel = 1
-	slot.ZIndex = 1
-	slot.Parent = bankGrid
-	slot.LayoutOrder = i - 1
+local inventorySlots = {}
+local currentTab = 1
+local currentBankTabs = {}
 
-	local itemImage = Instance.new("ImageLabel")
-	itemImage.Name = "ItemImage"
-	itemImage.Size = UDim2.new(1, 0, 1, 0)
-	itemImage.BackgroundTransparency = 1
-	itemImage.Image = ""
-	itemImage.ZIndex = 2
-	itemImage.Parent = slot
+local SLOT_SIZE = 50
+local SLOT_PADDING = 10
+local MAX_VISIBLE_SLOTS = 80
+local PLACEHOLDER_IMAGE = "rbxassetid://1234567890" -- Replace with a valid placeholder asset ID
 
-	local amountLabel = Instance.new("TextLabel")
-	amountLabel.Name = "AmountLabel"
-	amountLabel.Size = UDim2.new(0, 20, 0, 20)
-	amountLabel.Position = UDim2.new(0.6, 0, 0.6, 0)
-	amountLabel.Text = ""
-	amountLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-	amountLabel.TextSize = 14
-	amountLabel.BackgroundTransparency = 1
-	amountLabel.ZIndex = 3
-	amountLabel.Parent = slot
+local function setupGui()
+	bankFrame = Instance.new("Frame")
+	bankFrame.Name = "BankFrame"
+	bankFrame.Size = UDim2.new(0, 800, 0, 630)
+	bankFrame.Position = UDim2.new(0.5, -400, 0.5, -315)
+	bankFrame.BackgroundColor3 = Color3.fromRGB(62, 53, 41)
+	bankFrame.BorderSizePixel = 0
+	bankFrame.Visible = false
+	bankFrame.Parent = screenGui
 
-	bankSlots[i] = { Frame = slot, ItemImage = itemImage, AmountLabel = amountLabel }
+	local bankTitle = Instance.new("TextButton")
+	bankTitle.Name = "BankTitle"
+	bankTitle.Size = UDim2.new(0, 200, 0, 50)
+	bankTitle.Position = UDim2.new(0.5, -100, 0, -50)
+	bankTitle.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+	bankTitle.Text = "Bank of Level Up Larry"
+	bankTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
+	bankTitle.ZIndex = 2
+	bankTitle.Parent = bankFrame
+
+	tabsFrame = Instance.new("Frame")
+	tabsFrame.Name = "TabsFrame"
+	tabsFrame.Size = UDim2.new(0, 50, 0, 550)
+	tabsFrame.Position = UDim2.new(0, 40, 0, 60)
+	tabsFrame.BackgroundTransparency = 1
+	tabsFrame.ZIndex = 2
+	tabsFrame.Parent = bankFrame
+
+	contentFrame = Instance.new("Frame")
+	contentFrame.Name = "ContentFrame"
+	contentFrame.Size = UDim2.new(0, 600, 0, 550)
+	contentFrame.Position = UDim2.new(0, 140, 0, 60)
+	contentFrame.BackgroundTransparency = 1
+	contentFrame.ZIndex = 2
+	contentFrame.Parent = bankFrame
+
+	local bankGrid = Instance.new("Frame")
+	bankGrid.Name = "BankGrid"
+	bankGrid.Size = UDim2.new(0, 600, 0, 400)
+	bankGrid.Position = UDim2.new(0, 0, 0, 0)
+	bankGrid.BackgroundTransparency = 1
+	bankGrid.ZIndex = 2
+	bankGrid.Parent = contentFrame
+
+	local uiGrid = Instance.new("UIGridLayout")
+	uiGrid.Parent = bankGrid
+	uiGrid.CellSize = UDim2.new(0, SLOT_SIZE, 0, SLOT_SIZE)
+	uiGrid.CellPadding = UDim2.new(0, SLOT_PADDING, 0, SLOT_PADDING)
+	uiGrid.FillDirection = Enum.FillDirection.Horizontal
+	uiGrid.HorizontalAlignment = Enum.HorizontalAlignment.Left
+	uiGrid.VerticalAlignment = Enum.VerticalAlignment.Top
+	uiGrid.SortOrder = Enum.SortOrder.LayoutOrder
+	uiGrid.FillDirectionMaxCells = 8
+
+	inventoryGrid = Instance.new("Frame")
+	inventoryGrid.Name = "InventoryGrid"
+	inventoryGrid.Size = UDim2.new(0, 600, 0, 140)
+	inventoryGrid.Position = UDim2.new(0, 0, 0, 410)
+	inventoryGrid.BackgroundTransparency = 1
+	inventoryGrid.ZIndex = 2
+	inventoryGrid.Parent = contentFrame
+
+	local invUiGrid = Instance.new("UIGridLayout")
+	invUiGrid.Parent = inventoryGrid
+	invUiGrid.CellSize = UDim2.new(0, SLOT_SIZE, 0, SLOT_SIZE)
+	invUiGrid.CellPadding = UDim2.new(0, SLOT_PADDING, 0, SLOT_PADDING)
+	invUiGrid.FillDirection = Enum.FillDirection.Horizontal
+	invUiGrid.HorizontalAlignment = Enum.HorizontalAlignment.Left
+	invUiGrid.VerticalAlignment = Enum.VerticalAlignment.Top
+	invUiGrid.SortOrder = Enum.SortOrder.LayoutOrder
+	invUiGrid.FillDirectionMaxCells = 8
+
+	local depositButton = Instance.new("TextButton")
+	depositButton.Name = "DepositButton"
+	depositButton.Size = UDim2.new(0, 100, 0, 40)
+	depositButton.Position = UDim2.new(0, 10, 0, 10)
+	depositButton.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
+	depositButton.Text = "Deposit All"
+	depositButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+	depositButton.ZIndex = 2
+	depositButton.Parent = bankFrame
+
+	for i = 1, MAX_VISIBLE_SLOTS do
+		local slot = Instance.new("Frame")
+		slot.Name = "BankSlot" .. i
+		slot.Size = UDim2.new(0, SLOT_SIZE, 0, SLOT_SIZE)
+		slot.BackgroundColor3 = Color3.fromRGB(205, 174, 121)
+		slot.BorderSizePixel = 1
+		slot.ZIndex = 2
+		slot.Parent = bankGrid
+		slot.LayoutOrder = i - 1
+
+		local itemImage = Instance.new("ImageLabel")
+		itemImage.Name = "ItemImage"
+		itemImage.Size = UDim2.new(1, 0, 1, 0)
+		itemImage.BackgroundTransparency = 1
+		itemImage.Image = ""
+		itemImage.ZIndex = 3
+		itemImage.Parent = slot
+
+		local amountLabel = Instance.new("TextLabel")
+		amountLabel.Name = "AmountLabel"
+		amountLabel.Size = UDim2.new(0, 20, 0, 20)
+		amountLabel.Position = UDim2.new(0.6, 0, 0, 0)
+		amountLabel.Text = ""
+		amountLabel.TextColor3 = Color3.fromRGB(255, 255, 0)
+		amountLabel.TextSize = 14
+		amountLabel.BackgroundTransparency = 1
+		amountLabel.ZIndex = 4
+		amountLabel.Parent = slot
+
+		local highlight = Instance.new("Frame")
+		highlight.Name = "Highlight"
+		highlight.Size = UDim2.new(1, 0, 1, 0)
+		highlight.BackgroundColor3 = Color3.fromRGB(255, 255, 0)
+		highlight.BackgroundTransparency = 0.7
+		highlight.ZIndex = 2
+		highlight.Parent = slot
+		highlight.Visible = false
+
+		bankSlots[i] = { Frame = slot, ItemImage = itemImage, AmountLabel = amountLabel, Highlight = highlight }
+	end
+
+	for i = 1, 28 do
+		local slot = Instance.new("Frame")
+		slot.Name = "InventorySlot" .. i
+		slot.Size = UDim2.new(0, SLOT_SIZE, 0, SLOT_SIZE)
+		slot.BackgroundColor3 = Color3.fromRGB(205, 174, 121)
+		slot.BorderSizePixel = 1
+		slot.ZIndex = 2
+		slot.Parent = inventoryGrid
+		slot.LayoutOrder = i - 1
+
+		local itemImage = Instance.new("ImageLabel")
+		itemImage.Name = "ItemImage"
+		itemImage.Size = UDim2.new(1, 0, 1, 0)
+		itemImage.BackgroundTransparency = 1
+		itemImage.Image = ""
+		itemImage.ZIndex = 3
+		itemImage.Parent = slot
+
+		local amountLabel = Instance.new("TextLabel")
+		amountLabel.Name = "AmountLabel"
+		amountLabel.Size = UDim2.new(0, 20, 0, 20)
+		amountLabel.Position = UDim2.new(0.6, 0, 0, 0)
+		amountLabel.Text = ""
+		amountLabel.TextColor3 = Color3.fromRGB(255, 255, 0)
+		amountLabel.TextSize = 14
+		amountLabel.BackgroundTransparency = 1
+		amountLabel.ZIndex = 4
+		amountLabel.Parent = slot
+
+		local highlight = Instance.new("Frame")
+		highlight.Name = "Highlight"
+		highlight.Size = UDim2.new(1, 0, 1, 0)
+		highlight.BackgroundColor3 = Color3.fromRGB(255, 255, 0)
+		highlight.BackgroundTransparency = 0.7
+		highlight.ZIndex = 2
+		highlight.Parent = slot
+		highlight.Visible = false
+
+		inventorySlots[i] = { Frame = slot, ItemImage = itemImage, AmountLabel = amountLabel, Highlight = highlight }
+	end
+
+	for i = 1, 10 do
+		local tabButton = Instance.new("TextButton")
+		tabButton.Name = "Tab" .. i
+		tabButton.Size = UDim2.new(0, 40, 0, 40)
+		tabButton.Position = UDim2.new(0, 5, 0, (i - 1) * 50)
+		tabButton.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
+		tabButton.Text = tostring(i)
+		tabButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+		tabButton.ZIndex = 3
+		tabButton.Parent = tabsFrame
+
+		tabButton.MouseButton1Click:Connect(function()
+			currentTab = i
+			GetBankItemsEvent:FireServer(currentTab)
+		end)
+	end
+
+	depositButton.MouseButton1Click:Connect(function()
+		print("[Level Up Larry] Deposit button clicked")
+		local playerPanelGui = PlayerGui:FindFirstChild("PlayerPanelGUI")
+		if playerPanelGui then
+			local inventory = playerPanelGui.currentInventory or {}
+			for i = 1, 28 do
+				if inventory[i] then
+					local item = ItemDatabase[inventory[i].itemId]
+					DepositItemEvent:FireServer(item.id, inventory[i].quantity, currentTab)
+				end
+			end
+		end
+	end)
+
+	bankTitle.MouseButton1Click:Connect(function()
+		bankFrame.Visible = false
+		print("[Level Up Larry] Bank UI closed via BankTitle button")
+	end)
 end
 
-local function updateBankDisplay()
-	local usedSlots = 0
-	for i, slot in pairs(bankSlots) do
+setupGui()
+
+local function updateBankDisplay(tabs, tabIndex)
+	local bankTab = tabs and tabs[tabIndex] or {}
+	for i = 1, MAX_VISIBLE_SLOTS do
+		local slot = bankSlots[i]
 		slot.ItemImage.Image = ""
 		slot.AmountLabel.Text = ""
-		if bankItems[i] then
-			local itemName = bankItems[i].Name
-			slot.ItemImage.Image = (itemName == "Oak Logs") and "rbxassetid://10709824" or ItemDatabase[itemName] and ItemDatabase[itemName].Icon or ""
+		if bankTab[i] then
+			local item = ItemDatabase[bankTab[i].itemId]
+			slot.ItemImage.Image = item.icon or PLACEHOLDER_IMAGE
 			slot.ItemImage.ImageTransparency = 0
-			slot.AmountLabel.Text = bankItems[i].Amount > 1 and tostring(bankItems[i].Amount) or ""
-			usedSlots = usedSlots + 1
-			print("[Level Up Larry] Updated bank slot " .. i .. " with " .. itemName .. " x" .. bankItems[i].Amount)
+			slot.AmountLabel.Text = item.stackable and tostring(bankTab[i].quantity) or ""
+			print("[Level Up Larry] Updated bank slot " .. i .. " with " .. item.name .. " x" .. bankTab[i].quantity)
 		end
 	end
-	slotsLabel.Text = "Slots: " .. usedSlots .. "/" .. MAX_SLOTS
-	local rowHeight = 60 -- CellSize.Y (50) + CellPadding.Y (10)
-	local totalHeight = math.max(550, math.ceil(usedSlots / 12) * rowHeight)
-	bankGrid.Size = UDim2.new(0, 720, 0, totalHeight)
-	bankScroll.CanvasSize = UDim2.new(0, 0, 0, totalHeight)
-	print("[Level Up Larry] Bank grid initialized: " .. usedSlots .. " slots, " .. math.ceil(usedSlots / 12) .. " rows, height " .. totalHeight)
+
+	local playerPanelGui = PlayerGui:FindFirstChild("PlayerPanelGUI")
+	local inventory = playerPanelGui and playerPanelGui.currentInventory or {}
+	for i = 1, 28 do
+		local slot = inventorySlots[i]
+		slot.ItemImage.Image = ""
+		slot.AmountLabel.Text = ""
+		if inventory[i] then
+			local item = ItemDatabase[inventory[i].itemId]
+			slot.ItemImage.Image = item.icon or PLACEHOLDER_IMAGE
+			slot.ItemImage.ImageTransparency = 0
+			slot.AmountLabel.Text = item.stackable and tostring(inventory[i].quantity) or ""
+			print("[Level Up Larry] Updated inventory slot " .. i .. " with " .. item.name .. " x" .. inventory[i].quantity)
+		end
+	end
 end
 
-depositButton.MouseButton1Click:Connect(function()
-	print("[Level Up Larry] Deposit button clicked")
-	local inventoryItems = _G.inventoryItems or {}
-	local itemsToDeposit = {}
-	for i = 1, 28 do -- Match PlayerPanelGUIScript MAX_INVENTORY_SLOTS
-		if inventoryItems[i] then
-			table.insert(itemsToDeposit, { Name = inventoryItems[i].Name, Amount = inventoryItems[i].Amount })
+local draggingSlot = nil
+local dragImage = nil
+local dragType = nil -- "bank" or "inventory"
+
+for i, slot in pairs(bankSlots) do
+	slot.Frame.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 then
+			draggingSlot = i
+			dragType = "bank"
+			dragImage = slot.ItemImage:Clone()
+			dragImage.Parent = bankFrame
+			dragImage.ZIndex = 10
+			slot.ItemImage.ImageTransparency = 0.5
+			print("[Level Up Larry] Started dragging item from bank slot " .. i)
+		elseif input.UserInputType == Enum.UserInputType.MouseButton2 then
+			local bankTab = currentBankTabs[currentTab]
+			if bankTab and bankTab[i] then
+				local item = ItemDatabase[bankTab[i].itemId]
+				local menu = Instance.new("Frame")
+				menu.Name = "ContextMenu"
+				menu.Size = UDim2.new(0, 100, 0, 120)
+				menu.Position = UDim2.new(0, input.Position.X, 0, input.Position.Y)
+				menu.BackgroundColor3 = Color3.fromRGB(62, 53, 41)
+				menu.ZIndex = 5
+				menu.Parent = bankFrame
+
+				local options = {"Withdraw 1", "Withdraw All", "Examine", "Set Placeholder"}
+				for j, option in ipairs(options) do
+					local button = Instance.new("TextButton")
+					button.Name = option
+					button.Size = UDim2.new(1, 0, 0, 30)
+					button.Position = UDim2.new(0, 0, 0, (j - 1) * 30)
+					button.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
+					button.Text = option
+					button.TextColor3 = Color3.fromRGB(255, 255, 0)
+					button.ZIndex = 6
+					button.Parent = menu
+
+					button.MouseButton1Click:Connect(function()
+						if option == "Withdraw 1" then
+							WithdrawItemEvent:FireServer(item.id, 1, currentTab, i)
+						elseif option == "Withdraw All" then
+							WithdrawItemEvent:FireServer(item.id, bankTab[i].quantity, currentTab, i)
+						elseif option == "Examine" then
+							print("[Level Up Larry] Examine: " .. item.examine)
+						elseif option == "Set Placeholder" then
+							SetPlaceholderEvent:FireServer(currentTab, i, item.id)
+						end
+						menu:Destroy()
+					end)
+				end
+
+				local function closeMenu(_, state)
+					if state == Enum.UserInputState.Begin then
+						menu:Destroy()
+						ContextActionService:UnbindAction("CloseMenu")
+					end
+				end
+				ContextActionService:BindAction("CloseMenu", closeMenu, false, Enum.UserInputType.MouseButton1, Enum.UserInputType.MouseButton2)
+			end
+		end
+	end)
+end
+
+for i, slot in pairs(inventorySlots) do
+	slot.Frame.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 then
+			draggingSlot = i
+			dragType = "inventory"
+			dragImage = slot.ItemImage:Clone()
+			dragImage.Parent = bankFrame
+			dragImage.ZIndex = 10
+			slot.ItemImage.ImageTransparency = 0.5
+			print("[Level Up Larry] Started dragging item from inventory slot " .. i)
+		end
+	end)
+end
+
+UserInputService.InputChanged:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseMovement and draggingSlot then
+		local mousePos = UserInputService:GetMouseLocation()
+		dragImage.Position = UDim2.new(0, mousePos.X - SLOT_SIZE / 2, 0, mousePos.Y - SLOT_SIZE / 2)
+		for j, otherSlot in pairs(bankSlots) do
+			if dragType == "bank" and j ~= draggingSlot then
+				local pos = otherSlot.Frame.AbsolutePosition
+				local size = otherSlot.Frame.AbsoluteSize
+				local isOver = mousePos.X >= pos.X and mousePos.X <= pos.X + size.X and
+					mousePos.Y >= pos.Y and mousePos.Y <= pos.Y + size.Y
+				otherSlot.Highlight.Visible = isOver
+				if isOver then
+					print("[Level Up Larry] Dragging over bank slot " .. j .. " at " .. tostring(pos))
+				end
+			end
+		end
+		for j, otherSlot in pairs(inventorySlots) do
+			if dragType == "inventory" and j ~= draggingSlot then
+				local pos = otherSlot.Frame.AbsolutePosition
+				local size = otherSlot.Frame.AbsoluteSize
+				local isOver = mousePos.X >= pos.X and mousePos.X <= pos.X + size.X and
+					mousePos.Y >= pos.Y and mousePos.Y <= pos.Y + size.Y
+				otherSlot.Highlight.Visible = isOver
+				if isOver then
+					print("[Level Up Larry] Dragging over inventory slot " .. j .. " at " .. tostring(pos))
+				end
+			end
 		end
 	end
-	print("[Level Up Larry] Found " .. #itemsToDeposit .. " items in inventory")
-	for _, item in pairs(itemsToDeposit) do
-		local itemName = item.Name
-		local amount = item.Amount
-		print("[Level Up Larry] Attempting to deposit " .. itemName .. " x" .. amount)
-		DepositItemEvent:FireServer(itemName, amount)
-		print("[Level Up Larry] Fired DepositItemEvent for " .. itemName .. " x" .. amount)
-	end
-	-- Clear inventory after deposit
-	for i = 1, 28 do
-		inventoryItems[i] = nil
-	end
-	-- Update inventory display
-	local playerPanelGui = PlayerGui:WaitForChild("PlayerPanelGUI", 5)
-	if playerPanelGui then
-		local panelScript = playerPanelGui:WaitForChild("PlayerPanelGUIScript", 5)
-		if panelScript then
-			local env = getfenv()
-			local updateFunc = env.updateInventoryDisplay
-			if updateFunc then
-				updateFunc()
-				print("[Level Up Larry] Inventory display updated after deposit")
-			else
-				warn("[Level Up Larry] updateInventoryDisplay not found in PlayerPanelGUIScript environment")
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 and draggingSlot then
+		local mousePos = UserInputService:GetMouseLocation()
+		local targetSlot = nil
+		local targetType = nil
+		if dragType == "bank" then
+			for j, otherSlot in pairs(bankSlots) do
+				if j ~= draggingSlot then
+					local pos = otherSlot.Frame.AbsolutePosition
+					local size = otherSlot.Frame.AbsoluteSize
+					if mousePos.X >= pos.X and mousePos.X <= pos.X + size.X and
+						mousePos.Y >= pos.Y and mousePos.Y <= pos.Y + size.Y then
+						targetSlot = j
+						targetType = "bank"
+						print("[Level Up Larry] Detected drop on bank slot " .. j .. " at " .. tostring(pos))
+						break
+					end
+				end
 			end
-		else
-			warn("[Level Up Larry] PlayerPanelGUIScript not found in PlayerPanelGUI")
+		elseif dragType == "inventory" then
+			for j, otherSlot in pairs(inventorySlots) do
+				if j ~= draggingSlot then
+					local pos = otherSlot.Frame.AbsolutePosition
+					local size = otherSlot.Frame.AbsoluteSize
+					if mousePos.X >= pos.X and mousePos.X <= pos.X + size.X and
+						mousePos.Y >= pos.Y and mousePos.Y <= pos.Y + size.Y then
+						targetSlot = j
+						targetType = "inventory"
+						print("[Level Up Larry] Detected drop on inventory slot " .. j .. " at " .. tostring(pos))
+						break
+					end
+				end
+			end
+			for j, otherSlot in pairs(bankSlots) do
+				local pos = otherSlot.Frame.AbsolutePosition
+				local size = otherSlot.Frame.AbsoluteSize
+				if mousePos.X >= pos.X and mousePos.X <= pos.X + size.X and
+					mousePos.Y >= pos.Y and mousePos.Y <= pos.Y + size.Y then
+					targetSlot = j
+					targetType = "bank"
+					print("[Level Up Larry] Detected drop on bank slot " .. j .. " at " .. tostring(pos))
+					break
+				end
+			end
+		end
+	end
+
+	if targetSlot then
+		if dragType == "bank" and targetType == "bank" then
+			RearrangeBankEvent:FireServer(currentTab, draggingSlot, currentTab, targetSlot)
+		elseif dragType == "inventory" and targetType == "bank" then
+			local playerPanelGui = PlayerGui:FindFirstChild("PlayerPanelGUI")
+			if playerPanelGui then
+				local inventory = playerPanelGui.currentInventory or {}
+				if inventory[draggingSlot] then
+					local item = ItemDatabase[inventory[draggingSlot].itemId]
+					DepositItemEvent:FireServer(item.id, inventory[draggingSlot].quantity, currentTab)
+				end
+			end
 		end
 	else
-		warn("[Level Up Larry] PlayerPanelGUI not found in PlayerGui")
+		print("[Level Up Larry] Dropped item from " .. dragType .. " slot " .. draggingSlot .. " outside - keeping item")
 	end
+
+	if dragType == "bank" then
+		bankSlots[draggingSlot].ItemImage.ImageTransparency = 0
+	elseif dragType == "inventory" then
+		inventorySlots[draggingSlot].ItemImage.ImageTransparency = 0
+	end
+	dragImage:Destroy()
+	draggingSlot = nil
+	dragImage = nil
+	dragType = nil
+	for _, otherSlot in pairs(bankSlots) do
+		otherSlot.Highlight.Visible = false
+	end
+	for _, otherSlot in pairs(inventorySlots) do
+		otherSlot.Highlight.Visible = false
+	end
+end
 end)
 
 ToggleBankEvent.OnClientEvent:Connect(function(show)
 	print("[Level Up Larry] ToggleBankEvent received: " .. tostring(show))
 	bankFrame.Visible = show
-	print("[Level Up Larry] Bank UI toggled: " .. tostring(show))
+	print("[Level Up Larry] Bank UI toggled via event: " .. tostring(show))
 	if show then
-		updateBankDisplay()
+		GetBankItemsEvent:FireServer(currentTab)
 	end
 end)
 
-BankItemsEvent.OnClientEvent:Connect(function(items)
-	print("[Level Up Larry] Received bank items: " .. tostring(items))
-	bankItems = items or {}
-	updateBankDisplay()
-end)
-
-bankTitle.MouseButton1Click:Connect(function()
-	bankFrame.Visible = false
-	print("[Level Up Larry] Bank UI closed via BankTitle button")
+GetBankItemsEvent.OnClientEvent:Connect(function(tabs, tabIndex)
+	print("[Level Up Larry] Received bank items for tab " .. tabIndex)
+	currentBankTabs = tabs or {}
+	updateBankDisplay(tabs, tabIndex)
 end)
 
 local bankToggleKey = Enum.KeyCode.B
-local adminNames = {}
-spawn(function()
-	local devCommands = ReplicatedStorage:WaitForChild("Actions"):WaitForChild("DevCommandEvent", 10)
-	if devCommands then
-		devCommands.OnClientEvent:Connect(function(command, data)
-			if command == "SetAdmins" and data then
-				adminNames = data
-				print("[Level Up Larry] Admin names updated: " .. table.concat(adminNames, ", "))
-			end
-		end)
-	else
-		warn("[Level Up Larry] DevCommandEvent not found after 10 seconds")
-	end
-end)
-
 UserInputService.InputBegan:Connect(function(input)
 	if input.KeyCode == bankToggleKey then
 		print("[Level Up Larry] Bank toggle key pressed: " .. tostring(input.KeyCode))
 		local character = Player.Character
 		local bankTrigger = workspace:FindFirstChild("BankTrigger")
-		local isAdmin = table.find(adminNames, Player.Name) ~= nil
+		local permissionLevel = GetPermissionLevelFunction:InvokeServer()
+		local isAdmin = permissionLevel >= 100 -- ADMIN level from CommandHandler
 		local canOpen = false
 
 		if isAdmin then
 			canOpen = true
-			print("[Level Up Larry] Admin " .. Player.Name .. " can open bank from anywhere")
+			print("[Level Up Larry] Admin " .. Player.Name .. " (Level " .. permissionLevel .. ") can open bank from anywhere")
 		elseif character and bankTrigger and character:FindFirstChild("HumanoidRootPart") then
 			local distance = (character.HumanoidRootPart.Position - bankTrigger.Position).Magnitude
 			print("[Level Up Larry] Distance to BankTrigger: " .. distance)
 			canOpen = distance <= 10
+		else
+			print("[Level Up Larry] BankTrigger or character not found")
 		end
 
 		if canOpen then
 			bankFrame.Visible = not bankFrame.Visible
 			print("[Level Up Larry] Bank UI toggled via key: " .. tostring(bankFrame.Visible))
 			if bankFrame.Visible then
-				updateBankDisplay()
+				GetBankItemsEvent:FireServer(currentTab)
 			end
 		else
-			print("[Level Up Larry] Bank not toggled - too far or no admin privileges")
+			print("[Level Up Larry] Bank not toggled - too far or insufficient privileges (Level " .. permissionLevel .. ")")
 		end
 	end
 end)

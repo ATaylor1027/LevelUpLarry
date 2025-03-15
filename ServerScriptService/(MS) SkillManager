@@ -1,0 +1,125 @@
+-- ServerScriptService/SkillManager (ModuleScript)
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
+local DataManager = require(script.Parent.DataManager)
+local ItemDatabase = require(ReplicatedStorage.Configs:WaitForChild("ItemDatabase"))
+local AddItemEvent = ReplicatedStorage.Actions:WaitForChild("AddItem", 5)
+
+local xpTable = {
+	0, 83, 174, 276, 388, 512, 650, 801, 969, 1154, 1358, 1584, 1833, 2107, 2411, 2746, 3115, 3523, 3973, 4470,
+	5018, 5624, 6291, 6998, 7770, 8580, 9468, 10436, 11466, 12560, 13760, 15091, 16529, 18121, 19977, 22050, 24367,
+	26951, 29832, 33031, 36571, 40507, 44851, 49655, 54946, 60757, 67158, 74214, 82012, 90637, 100306, 110906,
+	122603, 135440, 149611, 165276, 182603, 201779, 223013, 246503, 272492, 301138, 332636, 367318, 405524,
+	447427, 493319, 543614, 598728, 6618883, 7230950, 7894678, 8613842, 9392490, 10234980, 11164844, 12176297,
+	13274757, 14466158, 15756977, 17154208, 18665462, 20300000
+}
+
+local function getLevelFromXP(xp)
+	for level, requiredXP in ipairs(xpTable) do
+		if xp < requiredXP then
+			return level - 1
+		end
+	end
+	return 99
+end
+
+local SkillManager = {}
+
+function SkillManager.setupPlayerSkills(player)
+	local data = DataManager.GetData(player)
+	local skills = data.Skills or {}
+	local skillsFolder = Instance.new("Folder")
+	skillsFolder.Name = "Skills"
+	skillsFolder.Parent = player
+
+	local skillList = {
+		"Attack", "Strength", "Defence", "Ranged", "Prayer", "Magic", "Runecrafting",
+		"Hitpoints", "Crafting", "Mining", "Smithing", "Fishing", "Cooking", "Firemaking",
+		"Woodcutting", "Agility", "Herblore", "Thieving", "Fletching", "Slayer"
+	}
+	for _, skillName in pairs(skillList) do
+		if not skills[skillName] then
+			skills[skillName] = (skillName == "Hitpoints" and 1154) or 0
+		end
+		local skillValue = Instance.new("NumberValue")
+		skillValue.Name = skillName
+		skillValue.Value = skills[skillName]
+		skillValue.Parent = skillsFolder
+	end
+	data.Skills = skills
+	DataManager.SetData(player, data)
+end
+
+function SkillManager.AddXP(player, skill, xp)
+	local data = DataManager.GetData(player)
+	if not data then
+		warn("[Level Up Larry] Failed to get data for " .. player.Name .. " in SkillManager")
+		return
+	end
+	if type(skill) ~= "string" or type(xp) ~= "number" or xp <= 0 then
+		warn("[Level Up Larry] Invalid skill XP addition attempt for " .. player.Name .. ": skill=" .. tostring(skill) .. ", xp=" .. tostring(xp))
+		return
+	end
+	data.Skills[skill] = (data.Skills[skill] or 0) + xp
+	DataManager.SetData(player, data)
+	local skillValue = player.Skills:FindFirstChild(skill)
+	if skillValue then
+		skillValue.Value = data.Skills[skill]
+	end
+	print("[Level Up Larry] Added " .. xp .. " XP to " .. skill .. " for " .. player.Name)
+end
+
+Players.PlayerAdded:Connect(function(player)
+	SkillManager.setupPlayerSkills(player)
+end)
+
+AddItemEvent.OnServerEvent:Connect(function(player, itemId, amount)
+	if not itemId or not amount then return end
+	if type(itemId) ~= "number" or type(amount) ~= "number" or amount <= 0 then
+		warn("[Level Up Larry] SkillManager: Invalid item addition attempt by " .. player.Name .. " - itemId: " .. tostring(itemId) .. ", amount: " .. tostring(amount))
+		return
+	end
+	local item = ItemDatabase[itemId]
+	if not item then
+		warn("[Level Up Larry] SkillManager: Unknown item ID " .. tostring(itemId) .. " for " .. player.Name)
+		return
+	end
+	print("[Level Up Larry] SkillManager: Notified of " .. item.name .. " x" .. amount .. " for " .. player.Name)
+	local data = DataManager.GetData(player)
+	local skills = data.Skills or {}
+	local skillName = nil
+	local xpToAdd = 0
+	if item.name:match("Logs") then
+		skillName = "Woodcutting"
+		if item.name == "Oak Logs" then xpToAdd = 37.5
+		elseif item.name == "Willow Logs" then xpToAdd = 67.5
+		elseif item.name == "Yew Logs" then xpToAdd = 175
+		end
+	elseif item.name:match("Ore") then
+		skillName = "Mining"
+		if item.name == "Copper Ore" then xpToAdd = 17.5
+		elseif item.name == "Iron Ore" then xpToAdd = 35
+		end
+	end
+	if skillName and skills[skillName] ~= nil and xpToAdd > 0 then
+		skills[skillName] = skills[skillName] + xpToAdd * amount
+		data.Skills = skills
+		DataManager.SetData(player, data)
+		local skillValue = player.Skills:FindFirstChild(skillName)
+		if skillValue then
+			skillValue.Value = skills[skillName]
+		end
+		print("[Level Up Larry] Added " .. (xpToAdd * amount) .. " XP to " .. skillName .. " for " .. player.Name)
+	else
+		print("[Level Up Larry] No skill XP added for " .. item.name .. " x" .. amount .. " for " .. player.Name)
+	end
+end)
+
+Players.PlayerRemoving:Connect(function(player)
+	local skillsFolder = player:FindFirstChild("Skills")
+	if skillsFolder then
+		skillsFolder:Destroy()
+	end
+end)
+
+return SkillManager

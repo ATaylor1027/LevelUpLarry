@@ -1,4 +1,4 @@
--- ServerScriptService > DataManager
+-- ServerScriptService/DataManager
 local DataStoreService = game:GetService("DataStoreService")
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -7,10 +7,13 @@ local playerDataStore = DataStoreService:GetDataStore("LevelUpLarryData")
 local playerData = {}
 local dataReady = {}
 
+local DATA_VERSION = 1
+
 local function savePlayerData(player)
 	local userId = player.UserId
 	local data = playerData[userId]
 	if data then
+		data.Version = DATA_VERSION
 		local success, err = pcall(function()
 			playerDataStore:SetAsync(userId, data)
 		end)
@@ -28,26 +31,87 @@ local function loadPlayerData(player)
 		return playerDataStore:GetAsync(userId)
 	end)
 	if success and data then
+		-- Handle versioning for future-proofing
+		if data.Version ~= DATA_VERSION then
+			print("[Level Up Larry] Migrating data for " .. player.Name .. " from version " .. (data.Version or "unknown") .. " to " .. DATA_VERSION)
+			-- Example migration logic (unchanged from previous)
+			if data.Inventory and not data.Inventory[1] then
+				local oldInventory = data.Inventory
+				data.Inventory = {}
+				for i = 1, 28 do
+					data.Inventory[i] = nil
+				end
+				for itemName, amount in pairs(oldInventory) do
+					local itemId = nil
+					for id, item in pairs(require(game.ReplicatedStorage.Configs.ItemDatabase)) do
+						if item.name == itemName then
+							itemId = id
+							break
+						end
+					end
+					if itemId then
+						for i = 1, 28 do
+							if not data.Inventory[i] then
+								data.Inventory[i] = {itemId = itemId, quantity = amount}
+								break
+							end
+						end
+					end
+				end
+			end
+			if not data.Bank then
+				data.Bank = {tabs = { [1] = {} }, placeholders = {}}
+				for i = 1, 800 do
+					data.Bank.tabs[1][i] = nil
+				end
+			end
+			if data.IsMuted == nil then -- Ensure IsMuted exists
+				data.IsMuted = false
+			end
+			data.Version = DATA_VERSION
+		end
 		playerData[userId] = data
 		print("[Level Up Larry] Loaded data for " .. player.Name)
 	else
-		-- Manually create default skills table
+		-- Default data for new players (unchanged)
 		local defaultSkills = {
-			Woodcutting = 0,  -- Level 1
-			Mining = 0,       -- Level 1
-			Fishing = 0,      -- Level 1 (future-proof)
-			Cooking = 0,      -- Level 1 (future-proof)
-			Hitpoints = 1154  -- Level 10
+			Woodcutting = 0, Mining = 0, Fishing = 0, Cooking = 0, Hitpoints = 1154
 		}
+		local defaultInventory = {}
+		for i = 1, 28 do
+			defaultInventory[i] = nil
+		end
+		local defaultBank = {tabs = { [1] = {} }, placeholders = {}}
+		for i = 1, 800 do
+			defaultBank.tabs[1][i] = nil
+		end
 		playerData[userId] = {
-			Inventory = {},
-			Bank = {},
+			Inventory = defaultInventory,
+			Equipment = {},
+			Bank = defaultBank,
 			Skills = defaultSkills,
-			Playtime = 0
+			Playtime = 0,
+			Version = DATA_VERSION,
+			IsMuted = false
 		}
 		print("[Level Up Larry] Created new data for " .. player.Name .. " with default skills")
 	end
 	dataReady[userId] = true
+
+	-- Replicate IsMuted to client
+	local dataFolder = Instance.new("Folder")
+	dataFolder.Name = "Data"
+	dataFolder.Parent = player
+	local isMutedValue = Instance.new("BoolValue")
+	isMutedValue.Name = "IsMuted"
+	isMutedValue.Value = playerData[userId].IsMuted
+	isMutedValue.Parent = dataFolder
+	-- Sync changes back to data table
+	isMutedValue.Changed:Connect(function(newValue)
+		playerData[userId].IsMuted = newValue
+		DataManager.SetData(player, playerData[userId])
+	end)
+
 	return playerData[userId]
 end
 

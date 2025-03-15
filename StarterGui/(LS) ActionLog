@@ -1,0 +1,110 @@
+-- StarterGui/ActionLog
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Player = Players.LocalPlayer
+local PlayerGui = Player:WaitForChild("PlayerGui")
+
+local Actions = ReplicatedStorage:WaitForChild("Actions")
+local ToggleBankEvent = Actions:WaitForChild("ToggleBank")
+local AddItemEvent = Actions:WaitForChild("AddItem")
+local DropItemEvent = Actions:WaitForChild("DropItem")
+local DepositItemEvent = Actions:WaitForChild("DepositItemEvent")
+local WithdrawItemEvent = Actions:WaitForChild("WithdrawItem")
+
+print("[Level Up Larry] ActionLog starting")
+
+-- GUI Setup
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "ActionLogGUI"
+screenGui.ResetOnSpawn = false
+screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+screenGui.Parent = PlayerGui
+
+local logFrame = Instance.new("Frame")
+logFrame.Name = "LogFrame"
+logFrame.Size = UDim2.new(0, 300, 0, 150)
+logFrame.Position = UDim2.new(0, 10, 1, -160) -- Bottom left with padding
+logFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+logFrame.BackgroundTransparency = 0.3
+logFrame.BorderSizePixel = 0
+logFrame.ZIndex = 2
+logFrame.Parent = screenGui
+
+local logText = Instance.new("TextLabel")
+logText.Name = "LogText"
+logText.Size = UDim2.new(1, -10, 1, -10)
+logText.Position = UDim2.new(0, 5, 0, 5)
+logText.BackgroundTransparency = 1
+logText.TextColor3 = Color3.fromRGB(255, 255, 255)
+logText.TextSize = 14
+logText.TextXAlignment = Enum.TextXAlignment.Left
+logText.TextYAlignment = Enum.TextYAlignment.Top
+logText.TextWrapped = true
+logText.ZIndex = 3
+logText.Parent = logFrame
+
+-- Action Log Management
+local actionLog = {}
+local MAX_LINES = 5
+
+local function addAction(message)
+	table.insert(actionLog, 1, os.date("%H:%M:%S") .. " - " .. message) -- Add timestamp
+	if #actionLog > MAX_LINES then
+		table.remove(actionLog, #actionLog) -- Remove oldest action
+	end
+	logText.Text = table.concat(actionLog, "\n")
+	print("[Level Up Larry] Logged action: " .. message)
+end
+
+-- Event Listeners
+ToggleBankEvent.OnClientEvent:Connect(function(show)
+	if show then
+		addAction("Opened bank")
+	else
+		addAction("Closed bank")
+	end
+end)
+
+AddItemEvent.OnClientEvent:Connect(function(inventory, _)
+	local item = inventory[#inventory] -- Last added item
+	if item then
+		local itemData = require(ReplicatedStorage:WaitForChild("Configs"):WaitForChild("ItemDatabase"))[item.itemId]
+		addAction("Picked up " .. itemData.name .. " x" .. item.quantity)
+	end
+end)
+
+DropItemEvent.OnClientEvent:Connect(function(slot)
+	local playerPanelGui = PlayerGui:FindFirstChild("PlayerPanelGUI")
+	if playerPanelGui and playerPanelGui.currentInventory[slot] then
+		local item = require(ReplicatedStorage:WaitForChild("Configs"):WaitForChild("ItemDatabase"))[playerPanelGui.currentInventory[slot].itemId]
+		addAction("Dropped " .. item.name .. " x" .. playerPanelGui.currentInventory[slot].quantity)
+	end
+end)
+
+DepositItemEvent.OnClientEvent:Connect(function(itemId, quantity)
+	local item = require(ReplicatedStorage:WaitForChild("Configs"):WaitForChild("ItemDatabase"))[itemId]
+	addAction("Deposited " .. item.name .. " x" .. quantity)
+end)
+
+WithdrawItemEvent.OnClientEvent:Connect(function(itemId, quantity)
+	local item = require(ReplicatedStorage:WaitForChild("Configs"):WaitForChild("ItemDatabase"))[itemId]
+	addAction("Withdrew " .. item.name .. " x" .. quantity)
+end)
+
+-- Hook into PlayerPanelGUIScript's examine action
+local playerPanelGui = PlayerGui:WaitForChild("PlayerPanelGUI")
+local playerPanelScript = playerPanelGui:WaitForChild("PlayerPanelGUIScript")
+playerPanelScript.ChildAdded:Connect(function(child)
+	if child:IsA("TextButton") and child.Name == "Examine" then
+		child.MouseButton1Click:Connect(function()
+			local slot = child.Parent.Parent -- Assuming context menu structure
+			local slotIndex = tonumber(slot.Name:match("InventorySlot(%d+)"))
+			if slotIndex and playerPanelGui.currentInventory[slotIndex] then
+				local item = require(ReplicatedStorage:WaitForChild("Configs"):WaitForChild("ItemDatabase"))[playerPanelGui.currentInventory[slotIndex].itemId]
+				addAction("Examined: " .. item.examine)
+			end
+		end)
+	end
+end)
+
+print("[Level Up Larry] ActionLog initialized")

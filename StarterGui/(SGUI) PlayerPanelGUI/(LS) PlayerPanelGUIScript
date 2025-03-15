@@ -1,16 +1,18 @@
--- StarterGui > PlayerPanelGUI > PlayerPanelGUIScript
+-- StarterGui/PlayerPanelGUI/PlayerPanelGUIScript
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService = game:GetService("UserInputService")
 local Players = game:GetService("Players")
+local ContextActionService = game:GetService("ContextActionService")
 local PlayerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
 
 local Actions = ReplicatedStorage:WaitForChild("Actions")
 local ToggleInventoryEvent = Actions:WaitForChild("ToggleInventory")
 local AddItemEvent = Actions:WaitForChild("AddItem")
-local GetPlaytime -- Declare without waiting yet
+local RearrangeInventoryEvent = Actions:WaitForChild("RearrangeInventory")
+local EquipItemEvent = Actions:WaitForChild("EquipItem")
+local DropItemEvent = Actions:WaitForChild("DropItem")
 local ItemDatabase = require(ReplicatedStorage:WaitForChild("Configs"):WaitForChild("ItemDatabase"))
 local Keybinds = require(ReplicatedStorage:WaitForChild("Configs"):WaitForChild("Keybinds"))
-local SkillNicknames = require(ReplicatedStorage:WaitForChild("Configs"):WaitForChild("SkillNicknames"))
 
 print("[Level Up Larry] PlayerPanelGUIScript starting")
 
@@ -29,50 +31,31 @@ playerPanelGui.ResetOnSpawn = true
 playerPanelGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 
 local panelFrame
-local ribbonFrame
+local tabsFrame
 local contentFrame
 local tabs = {}
 local currentTab = nil
+local currentInventory = {} -- Store inventory data locally
 
 local FRAME_WIDTH = 300
 local FRAME_HEIGHT = 480
-local RIBBON_HEIGHT = 40
-local CONTENT_HEIGHT = FRAME_HEIGHT - RIBBON_HEIGHT
 local SLOT_SIZE = 50
 local SLOT_PADDING = 10
 local MAX_INVENTORY_SLOTS = 28
 local BORDER_SIZE = 10
 local DARK_GREY_COLOR = Color3.fromRGB(50, 50, 50)
 local BUTTON_BG_COLOR = Color3.fromRGB(30, 30, 30)
+local PLACEHOLDER_IMAGE = "rbxassetid://1234567890" -- Replace with a valid placeholder asset ID
 
 local inventorySlots = {}
-local inventoryItems = {}
-_G.inventoryItems = inventoryItems -- Expose globally
-
-local xpTable = {
-	0, 83, 174, 276, 388, 512, 650, 801, 969, 1154, 1358, 1584, 1833, 2107, 2411, 2746, 3115, 3523, 3973, 4470,
-	5018, 5624, 6291, 6998, 7770, 8580, 9468, 10436, 11466, 12560, 13760, 15091, 16529, 18121, 19977, 22050, 24367,
-	26951, 29832, 33031, 36571, 40507, 44851, 49655, 54946, 60757, 67158, 74214, 82012, 90637, 100306, 110906,
-	122603, 135440, 149611, 165276, 182603, 201779, 223013, 246503, 272492, 301138, 332636, 367318, 405524,
-	447427, 493319, 543614, 598728, 6618883, 7230950, 7894678, 8613842, 9392490, 10234980, 11164844, 12176297,
-	13274757, 14466158, 15756977, 17154208, 18665462, 20300000
-}
-
-local function getLevelFromXP(xp)
-	for level, requiredXP in ipairs(xpTable) do
-		if xp < requiredXP then
-			return level - 1
-		end
-	end
-	return 99
-end
+local equipmentSlots = {}
 
 local function setupGui()
 	print("[Level Up Larry] Setting up GUI")
 	panelFrame = playerPanelGui:FindFirstChild("PanelFrame") or Instance.new("Frame")
 	panelFrame.Name = "PanelFrame"
 	panelFrame.Size = UDim2.new(0, FRAME_WIDTH, 0, FRAME_HEIGHT)
-	panelFrame.Position = UDim2.new(0, 10, 0.5, -FRAME_HEIGHT / 2)
+	panelFrame.Position = UDim2.new(1, -FRAME_WIDTH - 10, 0.5, -FRAME_HEIGHT / 2)
 	panelFrame.BackgroundColor3 = DARK_GREY_COLOR
 	panelFrame.BorderSizePixel = 0
 	panelFrame.Active = true
@@ -92,31 +75,28 @@ local function setupGui()
 
 	contentFrame = innerFrame:FindFirstChild("ContentFrame") or Instance.new("Frame")
 	contentFrame.Name = "ContentFrame"
-	contentFrame.Size = UDim2.new(1, 0, 0, CONTENT_HEIGHT)
-	contentFrame.Position = UDim2.new(0, 0, 0, 0)
+	contentFrame.Size = UDim2.new(1, 0, 1, 0)
 	contentFrame.BackgroundTransparency = 1
 	contentFrame.ZIndex = 2
 	contentFrame.Parent = innerFrame
 
-	ribbonFrame = innerFrame:FindFirstChild("RibbonFrame") or Instance.new("Frame")
-	ribbonFrame.Name = "RibbonFrame"
-	ribbonFrame.Size = UDim2.new(1, 0, 0, RIBBON_HEIGHT)
-	ribbonFrame.Position = UDim2.new(0, 0, 1, -RIBBON_HEIGHT)
-	ribbonFrame.BackgroundColor3 = BUTTON_BG_COLOR
-	ribbonFrame.BackgroundTransparency = 0.6
-	ribbonFrame.BorderSizePixel = 0
-	ribbonFrame.ZIndex = 2
-	ribbonFrame.Parent = innerFrame
+	tabsFrame = innerFrame:FindFirstChild("TabsFrame") or Instance.new("Frame")
+	tabsFrame.Name = "TabsFrame"
+	tabsFrame.Size = UDim2.new(0, 50, 1, 0)
+	tabsFrame.Position = UDim2.new(1, -50, 0, 0)
+	tabsFrame.BackgroundTransparency = 1
+	tabsFrame.ZIndex = 2
+	tabsFrame.Parent = innerFrame
 
-	local lockButton = ribbonFrame:FindFirstChild("LockButton") or Instance.new("TextButton")
+	local lockButton = tabsFrame:FindFirstChild("LockButton") or Instance.new("TextButton")
 	lockButton.Name = "LockButton"
 	lockButton.Size = UDim2.new(0, 30, 0, 30)
-	lockButton.Position = UDim2.new(1, -40, 0, 5)
+	lockButton.Position = UDim2.new(0, 10, 1, -40)
 	lockButton.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
 	lockButton.Text = "🔒"
 	lockButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 	lockButton.ZIndex = 3
-	lockButton.Parent = ribbonFrame
+	lockButton.Parent = tabsFrame
 
 	local isLocked = true
 	lockButton.MouseButton1Click:Connect(function()
@@ -131,21 +111,30 @@ end
 
 setupGui()
 
-local function updateInventoryDisplay()
+local function updateInventoryDisplay(inventory, equipment)
 	print("[Level Up Larry] Updating Inventory display")
+	currentInventory = inventory or currentInventory -- Ensure currentInventory is updated
 	for i = 1, MAX_INVENTORY_SLOTS do
 		local slot = inventorySlots[i]
 		slot.ItemImage.Image = ""
 		slot.AmountLabel.Text = ""
-		if inventoryItems[i] then
-			local itemName = inventoryItems[i].Name
-			local amount = inventoryItems[i].Amount
-			slot.ItemImage.Image = (itemName == "Oak Logs") and "rbxassetid://10709824" or ItemDatabase[itemName] and ItemDatabase[itemName].Icon or ""
+		if inventory[i] then
+			local item = ItemDatabase[inventory[i].itemId]
+			slot.ItemImage.Image = item.icon or PLACEHOLDER_IMAGE
 			slot.ItemImage.ImageTransparency = 0
-			slot.AmountLabel.Text = amount > 1 and tostring(amount) or ""
-			print("[Level Up Larry] Updated slot " .. i .. " with " .. itemName .. " x" .. amount .. " - Image: " .. slot.ItemImage.Image)
+			slot.AmountLabel.Text = item.stackable and tostring(inventory[i].quantity) or ""
+			print("[Level Up Larry] Updated slot " .. i .. " with " .. item.name .. " x" .. inventory[i].quantity)
 		else
 			print("[Level Up Larry] Slot " .. i .. " is empty")
+		end
+	end
+
+	for slotName, slot in pairs(equipmentSlots) do
+		slot.ItemImage.Image = ""
+		if equipment[slotName] then
+			local item = ItemDatabase[equipment[slotName].itemId]
+			slot.ItemImage.Image = item.icon or PLACEHOLDER_IMAGE
+			slot.ItemImage.ImageTransparency = 0
 		end
 	end
 end
@@ -159,7 +148,7 @@ UserInputService.InputBegan:Connect(function(input)
 		panelFrame.Visible = not panelFrame.Visible
 		print("[Level Up Larry] Player panel toggled via key: " .. tostring(panelFrame.Visible))
 		if panelFrame.Visible then
-			updateInventoryDisplay()
+			game.ReplicatedStorage.Actions.UpdateInventory:FireServer()
 		end
 	end
 end)
@@ -173,11 +162,12 @@ local function createTab(name, iconText, setupFunction)
 	button.Text = iconText
 	button.TextColor3 = Color3.fromRGB(255, 255, 255)
 	button.ZIndex = 3
-	button.Parent = ribbonFrame
+	button.Parent = tabsFrame
 
 	local tabFrame = Instance.new("Frame")
 	tabFrame.Name = name .. "Tab"
-	tabFrame.Size = UDim2.new(1, 0, 1, 0)
+	tabFrame.Size = UDim2.new(1, -50, 1, 0)
+	tabFrame.Position = UDim2.new(0, 0, 0, 0)
 	tabFrame.BackgroundTransparency = 1
 	tabFrame.ZIndex = 2
 	tabFrame.Parent = contentFrame
@@ -204,8 +194,8 @@ local function setupInventoryTab()
 	print("[Level Up Larry] Setting up Inventory tab")
 	local inventoryFrame = Instance.new("Frame")
 	inventoryFrame.Name = "InventoryFrame"
-	inventoryFrame.Size = UDim2.new(0, 250, 0, 410)
-	inventoryFrame.Position = UDim2.new(0.5, -125, 0, 10)
+	inventoryFrame.Size = UDim2.new(0, 230, 0, 390)
+	inventoryFrame.Position = UDim2.new(0.5, -115, 0, 10)
 	inventoryFrame.BackgroundColor3 = Color3.fromRGB(62, 53, 41)
 	inventoryFrame.BorderSizePixel = 0
 	inventoryFrame.ZIndex = 2
@@ -253,7 +243,7 @@ local function setupInventoryTab()
 		amountLabel.Size = UDim2.new(0, 20, 0, 20)
 		amountLabel.Position = UDim2.new(0.6, 0, 0, 0)
 		amountLabel.Text = ""
-		amountLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+		amountLabel.TextColor3 = Color3.fromRGB(255, 255, 0)
 		amountLabel.TextSize = 14
 		amountLabel.BackgroundTransparency = 1
 		amountLabel.ZIndex = 4
@@ -276,13 +266,62 @@ local function setupInventoryTab()
 
 	for i, slot in pairs(inventorySlots) do
 		slot.Frame.InputBegan:Connect(function(input)
-			if input.UserInputType == Enum.UserInputType.MouseButton1 and inventoryItems[i] then
+			if input.UserInputType == Enum.UserInputType.MouseButton1 then
 				draggingSlot = i
 				dragImage = slot.ItemImage:Clone()
 				dragImage.Parent = playerPanelGui
 				dragImage.ZIndex = 10
 				slot.ItemImage.ImageTransparency = 0.5
 				print("[Level Up Larry] Started dragging item from slot " .. i)
+			elseif input.UserInputType == Enum.UserInputType.MouseButton2 then
+				if currentInventory[i] then
+					local item = ItemDatabase[currentInventory[i].itemId]
+					local menu = Instance.new("Frame")
+					menu.Name = "ContextMenu"
+					menu.Size = UDim2.new(0, 100, 0, 120)
+					menu.Position = UDim2.new(0, input.Position.X, 0, input.Position.Y)
+					menu.BackgroundColor3 = Color3.fromRGB(62, 53, 41)
+					menu.ZIndex = 5
+					menu.Parent = playerPanelGui
+
+					local options = {"Use", "Drop", "Examine"}
+					if item.equipSlot then
+						table.insert(options, "Equip")
+					end
+
+					for j, option in ipairs(options) do
+						local button = Instance.new("TextButton")
+						button.Name = option
+						button.Size = UDim2.new(1, 0, 0, 30)
+						button.Position = UDim2.new(0, 0, 0, (j - 1) * 30)
+						button.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
+						button.Text = option
+						button.TextColor3 = Color3.fromRGB(255, 255, 255)
+						button.ZIndex = 6
+						button.Parent = menu
+
+						button.MouseButton1Click:Connect(function()
+							if option == "Use" then
+								-- Implement use logic here
+							elseif option == "Drop" then
+								DropItemEvent:FireServer(i)
+							elseif option == "Examine" then
+								print("[Level Up Larry] Examine: " .. item.examine)
+							elseif option == "Equip" then
+								EquipItemEvent:FireServer(i)
+							end
+							menu:Destroy()
+						end)
+					end
+
+					local function closeMenu(_, state)
+						if state == Enum.UserInputState.Begin then
+							menu:Destroy()
+							ContextActionService:UnbindAction("CloseMenu")
+						end
+					end
+					ContextActionService:BindAction("CloseMenu", closeMenu, false, Enum.UserInputType.MouseButton1, Enum.UserInputType.MouseButton2)
+				end
 			end
 		end)
 	end
@@ -323,14 +362,11 @@ local function setupInventoryTab()
 				end
 			end
 			if targetSlot then
-				local temp = inventoryItems[targetSlot]
-				inventoryItems[targetSlot] = inventoryItems[draggingSlot]
-				inventoryItems[draggingSlot] = temp
-				print("[Level Up Larry] Dropped item from slot " .. draggingSlot .. " to slot " .. targetSlot)
-				updateInventoryDisplay()
+				RearrangeInventoryEvent:FireServer(draggingSlot, targetSlot)
+				wait(0.1) -- Small delay to ensure server updates
+				game.ReplicatedStorage.Actions.UpdateInventory:FireServer() -- Refresh inventory
 			else
 				print("[Level Up Larry] Dropped item from slot " .. draggingSlot .. " outside inventory - keeping item")
-				updateInventoryDisplay()
 			end
 			inventorySlots[draggingSlot].ItemImage.ImageTransparency = 0
 			dragImage:Destroy()
@@ -345,93 +381,18 @@ local function setupInventoryTab()
 	print("[Level Up Larry] Inventory tab setup complete")
 end
 
-AddItemEvent.OnClientEvent:Connect(function(itemName, amount)
-	print("[Level Up Larry] Received item: " .. itemName .. " x" .. amount)
-	for i = 1, MAX_INVENTORY_SLOTS do
-		if inventoryItems[i] and inventoryItems[i].Name == itemName and ItemDatabase[itemName] and ItemDatabase[itemName].Stackable then
-			inventoryItems[i].Amount = inventoryItems[i].Amount + amount
-			updateInventoryDisplay()
-			return
-		end
-	end
-	for i = 1, MAX_INVENTORY_SLOTS do
-		if not inventoryItems[i] then
-			inventoryItems[i] = { Name = itemName, Amount = amount }
-			updateInventoryDisplay()
-			return
-		end
-	end
-	print("[Level Up Larry] Inventory full, could not add " .. itemName)
-end)
-
 local function setupStatsTab()
 	print("[Level Up Larry] Setting up Stats tab")
 	local statsFrame = Instance.new("Frame")
 	statsFrame.Name = "StatsFrame"
-	statsFrame.Size = UDim2.new(0, 250, 0, 410)
-	statsFrame.Position = UDim2.new(0.5, -125, 0, 10)
+	statsFrame.Size = UDim2.new(0, 230, 0, 390)
+	statsFrame.Position = UDim2.new(0.5, -115, 0, 10)
 	statsFrame.BackgroundColor3 = Color3.fromRGB(62, 53, 41)
 	statsFrame.BorderSizePixel = 0
 	statsFrame.ZIndex = 2
 	statsFrame.Parent = tabs["Stats"].Frame
 
-	local scrollFrame = Instance.new("ScrollingFrame")
-	scrollFrame.Name = "StatsScroll"
-	scrollFrame.Size = UDim2.new(1, -20, 1, -20)
-	scrollFrame.Position = UDim2.new(0, 10, 0, 10)
-	scrollFrame.BackgroundTransparency = 1
-	scrollFrame.ScrollBarThickness = 8
-	scrollFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
-	scrollFrame.ZIndex = 2
-	scrollFrame.Parent = statsFrame
-
-	local statsList = Instance.new("Frame")
-	statsList.Name = "StatsList"
-	statsList.Size = UDim2.new(1, -8, 0, 0)
-	statsList.Position = UDim2.new(0, 0, 0, 0)
-	statsList.BackgroundTransparency = 1
-	statsList.ZIndex = 2
-	statsList.Parent = scrollFrame
-
-	local player = Players.LocalPlayer
-	local skillsFolder = player:WaitForChild("Skills")
-	local skills = {
-		"Attack", "Strength", "Defence", "Ranged", "Prayer", "Magic", "Runecrafting",
-		"Hitpoints", "Crafting", "Mining", "Smithing", "Fishing", "Cooking", "Firemaking",
-		"Woodcutting", "Agility", "Herblore", "Thieving", "Fletching", "Slayer"
-	}
-	local function updateStatsDisplay()
-		for _, child in pairs(statsList:GetChildren()) do
-			child:Destroy()
-		end
-		local yOffset = 0
-		for i, skill in pairs(skills) do
-			local label = Instance.new("TextLabel")
-			label.Name = skill .. "Label"
-			label.Size = UDim2.new(1, 0, 0, 30)
-			label.Position = UDim2.new(0, 0, 0, yOffset)
-			local xp = skillsFolder:FindFirstChild(skill) and skillsFolder[skill].Value or 0
-			local level = getLevelFromXP(xp)
-			local nickname = SkillNicknames[skill] or skill
-			label.Text = nickname .. ": Lvl " .. level .. " (" .. xp .. " XP)"
-			label.TextColor3 = Color3.fromRGB(255, 255, 255)
-			label.BackgroundTransparency = 1
-			label.TextSize = 16
-			label.ZIndex = 3
-			label.Parent = statsList
-			yOffset = yOffset + 35
-		end
-		statsList.Size = UDim2.new(1, -8, 0, yOffset)
-		scrollFrame.CanvasSize = UDim2.new(0, 0, 0, yOffset)
-	end
-
-	for _, skill in pairs(skills) do
-		local skillValue = skillsFolder:FindFirstChild(skill)
-		if skillValue then
-			skillValue.Changed:Connect(updateStatsDisplay)
-		end
-	end
-	updateStatsDisplay()
+	-- Placeholder for stats tab (to be implemented)
 	print("[Level Up Larry] Stats tab setup complete")
 end
 
@@ -439,98 +400,49 @@ local function setupEquipmentTab()
 	print("[Level Up Larry] Setting up Equipment tab")
 	local equipFrame = Instance.new("Frame")
 	equipFrame.Name = "EquipmentFrame"
-	equipFrame.Size = UDim2.new(0, 250, 0, 410)
-	equipFrame.Position = UDim2.new(0.5, -125, 0, 10)
+	equipFrame.Size = UDim2.new(0, 230, 0, 390)
+	equipFrame.Position = UDim2.new(0.5, -115, 0, 10)
 	equipFrame.BackgroundColor3 = Color3.fromRGB(62, 53, 41)
 	equipFrame.BorderSizePixel = 0
 	equipFrame.ZIndex = 2
 	equipFrame.Parent = tabs["Equipment"].Frame
 
-	local infoList = Instance.new("Frame")
-	infoList.Name = "InfoList"
-	infoList.Size = UDim2.new(1, -20, 1, -20)
-	infoList.Position = UDim2.new(0, 10, 0, 10)
-	infoList.BackgroundTransparency = 1
-	infoList.ZIndex = 2
-	infoList.Parent = equipFrame
+	local slots = {
+		{name = "Head", pos = UDim2.new(0.5, -25, 0, 20)},
+		{name = "Cape", pos = UDim2.new(0, 10, 0, 20)},
+		{name = "Neck", pos = UDim2.new(1, -60, 0, 20)},
+		{name = "Weapon", pos = UDim2.new(0, 10, 0, 100)},
+		{name = "Body", pos = UDim2.new(0.5, -25, 0, 100)},
+		{name = "Shield", pos = UDim2.new(1, -60, 0, 100)},
+		{name = "Legs", pos = UDim2.new(0.5, -25, 0, 180)},
+		{name = "Hands", pos = UDim2.new(0, 10, 0, 260)},
+		{name = "Feet", pos = UDim2.new(0.5, -25, 0, 260)},
+		{name = "Ring", pos = UDim2.new(1, -60, 0, 260)},
+		{name = "Ammo", pos = UDim2.new(0, 10, 0, 340)}
+	}
 
-	local player = Players.LocalPlayer
-	local nameLabel = Instance.new("TextLabel")
-	nameLabel.Name = "NameLabel"
-	nameLabel.Size = UDim2.new(1, 0, 0, 30)
-	nameLabel.Position = UDim2.new(0, 0, 0, 0)
-	nameLabel.Text = "Player: " .. player.Name
-	nameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-	nameLabel.BackgroundTransparency = 1
-	nameLabel.TextSize = 16
-	nameLabel.ZIndex = 3
-	nameLabel.Parent = infoList
+	for _, slot in pairs(slots) do
+		local slotFrame = Instance.new("Frame")
+		slotFrame.Name = slot.name .. "Slot"
+		slotFrame.Size = UDim2.new(0, 50, 0, 50)
+		slotFrame.Position = slot.pos
+		slotFrame.BackgroundColor3 = Color3.fromRGB(205, 174, 121)
+		slotFrame.BorderSizePixel = 1
+		slotFrame.BorderColor3 = Color3.fromRGB(0, 0, 0)
+		slotFrame.ZIndex = 2
+		slotFrame.Parent = equipFrame
 
-	local playtimeLabel = Instance.new("TextLabel")
-	playtimeLabel.Name = "PlaytimeLabel"
-	playtimeLabel.Size = UDim2.new(1, 0, 0, 30)
-	playtimeLabel.Position = UDim2.new(0, 0, 0, 35)
-	playtimeLabel.Text = "Playtime: 0 minutes"
-	playtimeLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-	playtimeLabel.BackgroundTransparency = 1
-	playtimeLabel.TextSize = 16
-	playtimeLabel.ZIndex = 3
-	playtimeLabel.Parent = infoList
+		local itemImage = Instance.new("ImageLabel")
+		itemImage.Name = "ItemImage"
+		itemImage.Size = UDim2.new(1, 0, 1, 0)
+		itemImage.BackgroundTransparency = 1
+		itemImage.Image = ""
+		itemImage.ZIndex = 3
+		itemImage.Parent = slotFrame
 
-	local totalSeconds = 0
-	local function updatePlaytime(playtime)
-		if playtime == nil then
-			print("[Level Up Larry] Playtime received as nil, defaulting to 0")
-			playtime = 0
-		end
-		totalSeconds = playtime
-		local minutes = math.floor(totalSeconds / 60)
-		local hours = math.floor(minutes / 60)
-		local days = math.floor(hours / 24)
-		local weeks = math.floor(days / 7)
-		local years = math.floor(days / 365)
-
-		local displayText = "Playtime: "
-		if years > 0 then
-			displayText = displayText .. years .. " year" .. (years > 1 and "s" or "")
-			local remainingDays = days % 365
-			if remainingDays > 0 then
-				displayText = displayText .. ", " .. remainingDays .. " day" .. (remainingDays > 1 and "s" or "")
-			end
-		elseif weeks > 0 then
-			displayText = displayText .. weeks .. " week" .. (weeks > 1 and "s" or "")
-			local remainingDays = days % 7
-			if remainingDays > 0 then
-				displayText = displayText .. ", " .. remainingDays .. " day" .. (remainingDays > 1 and "s" or "")
-			end
-		elseif days > 0 then
-			displayText = displayText .. days .. " day" .. (days > 1 and "s" or "")
-			local remainingHours = hours % 24
-			if remainingHours > 0 then
-				displayText = displayText .. ", " .. remainingHours .. " hour" .. (remainingHours > 1 and "s" or "")
-			end
-		elseif hours > 0 then
-			displayText = displayText .. hours .. " hour" .. (hours > 1 and "s" or "")
-			local remainingMinutes = minutes % 60
-			if remainingMinutes > 0 then
-				displayText = displayText .. ", " .. remainingMinutes .. " minute" .. (remainingMinutes > 1 and "s" or "")
-			end
-		else
-			displayText = displayText .. minutes .. " minute" .. (minutes ~= 1 and "s" or "")
-		end
-		playtimeLabel.Text = displayText
+		equipmentSlots[slot.name] = { Frame = slotFrame, ItemImage = itemImage }
 	end
 
-	-- Delay GetPlaytime setup until it exists
-	spawn(function()
-		GetPlaytime = Actions:WaitForChild("GetPlaytime", 10)
-		if GetPlaytime then
-			GetPlaytime:FireServer()
-			GetPlaytime.OnClientEvent:Connect(updatePlaytime)
-		else
-			warn("[Level Up Larry] GetPlaytime not found after 10 seconds")
-		end
-	end)
 	print("[Level Up Larry] Equipment tab setup complete")
 end
 
@@ -539,21 +451,38 @@ createTab("Inventory", "🎒", setupInventoryTab)
 createTab("Stats", "⭐", setupStatsTab)
 createTab("Equipment", "⚔️", setupEquipmentTab)
 
-print("[Level Up Larry] Positioning ribbon buttons")
+print("[Level Up Larry] Positioning tab buttons")
 local buttonCount = 0
 for _, tab in pairs(tabs) do
-	tab.Button.Position = UDim2.new(0, buttonCount * 40, 0, 0)
+	tab.Button.Position = UDim2.new(0, 5, 0, buttonCount * 50)
 	buttonCount = buttonCount + 1
 end
 
 tabs["Inventory"].Switch()
+
+AddItemEvent.OnClientEvent:Connect(function(inventory, equipment)
+	currentInventory = inventory
+	updateInventoryDisplay(inventory, equipment)
+end)
 
 ToggleInventoryEvent.OnClientEvent:Connect(function(show)
 	print("[Level Up Larry] ToggleInventoryEvent received: " .. tostring(show))
 	panelFrame.Visible = show
 	print("[Level Up Larry] Player panel toggled: " .. tostring(show))
 	if show then
-		updateInventoryDisplay()
+		game.ReplicatedStorage.Actions.UpdateInventory:FireServer()
+	end
+end)
+
+spawn(function()
+	while true do
+		wait(2)
+		if playerPanelGui.Parent then
+			game.ReplicatedStorage.Actions.UpdateInventory:FireServer()
+			print("[Level Up Larry] Auto-refreshed inventory")
+		else
+			break
+		end
 	end
 end)
 
