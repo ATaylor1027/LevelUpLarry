@@ -20,3 +20,4 @@ When deciding how to implement a system or anything, always assume that I want i
 Under the TagList folder, each text file's name is a seperate "Properties - Configuration" in RBX Studio (how tags are stored in rbx studio) 
 
 
+All scripts Should wait for ActionsReady correctly, to prevent them from failing before they fully function.

@@ -1,34 +1,25 @@
+-- Workspace/BankTrigger/BankTriggerScript
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local ToggleBankEvent = ReplicatedStorage.Actions:WaitForChild("ToggleBank", 5)
-local ProximityPromptService = game:GetService("ProximityPromptService")
-local Players = game:GetService("Players")
 
-local debounce = false
+-- Wait for Actions to be ready
+local Actions = ReplicatedStorage:WaitForChild("Actions")
+local ToggleBankEvent = Actions:WaitForChild("ToggleBank")
 
 print("[Level Up Larry] BankTrigger script loaded")
 
-local function onPromptTriggered(player)
-	if debounce or not player.Character then return end
-	debounce = true
-	print("[Level Up Larry] " .. player.Name .. " interacted with bank!")
-	ToggleBankEvent:FireClient(player, true) -- Fire unconditionally, let client handle toggle
-	wait(1) -- Prevent rapid triggering
-	debounce = false
-end
-
-local prompt = script.Parent:WaitForChild("BankPrompt", 5)
-if prompt then
-	prompt.Triggered:Connect(onPromptTriggered)
-	print("[Level Up Larry] Added BankPrompt to BankTrigger")
-else
-	warn("[Level Up Larry] BankPrompt not found in BankTrigger")
+local bankTrigger = script.Parent
+local prompt = bankTrigger:FindFirstChild("BankPrompt")
+if not prompt then
 	prompt = Instance.new("ProximityPrompt")
 	prompt.Name = "BankPrompt"
-	prompt.ActionText = "Open"
-	prompt.KeyboardKeyCode = Enum.KeyCode.E
-	prompt.HoldDuration = 0
-	prompt.MaxActivationDistance = 5
-	prompt.Parent = script.Parent
-	prompt.Triggered:Connect(onPromptTriggered)
+	prompt.ActionText = "Open Bank"
+	prompt.ObjectText = "Bank"
+	prompt.MaxActivationDistance = 10
+	prompt.Parent = bankTrigger
 	print("[Level Up Larry] Created fallback BankPrompt")
 end
+
+prompt.Triggered:Connect(function(player)
+	ToggleBankEvent:FireClient(player, true)
+	print("[Level Up Larry] " .. player.Name .. " triggered bank prompt")
+end)

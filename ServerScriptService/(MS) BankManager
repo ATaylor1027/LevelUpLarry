@@ -1,195 +1,94 @@
--- ServerScriptService/BankManager (ModuleScript)
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
+-- ServerScriptService/BankManager
 local Players = game:GetService("Players")
-local DataManager = require(script.Parent:WaitForChild("DataManager"))
-local ItemDatabase = require(ReplicatedStorage.Configs:WaitForChild("ItemDatabase"))
-local DepositItemEvent = ReplicatedStorage.Actions:WaitForChild("DepositItemEvent")
-local WithdrawItemEvent = ReplicatedStorage.Actions:WaitForChild("WithdrawItem")
-local GetBankItemsEvent = ReplicatedStorage.Actions:WaitForChild("GetBankItems")
-local RearrangeBankEvent = Instance.new("RemoteEvent")
-local SetPlaceholderEvent = Instance.new("RemoteEvent")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-RearrangeBankEvent.Name = "RearrangeBank"
-RearrangeBankEvent.Parent = ReplicatedStorage.Actions
-SetPlaceholderEvent.Name = "SetPlaceholder"
-SetPlaceholderEvent.Parent = ReplicatedStorage.Actions
+local Actions = ReplicatedStorage:WaitForChild("Actions")
+local GetBankItemsEvent = Actions:WaitForChild("GetBankItems")
+local DepositItemEvent = Actions:WaitForChild("DepositItemEvent")
+local WithdrawItemEvent = Actions:WaitForChild("WithdrawItem")
+local RearrangeBankEvent = Actions:WaitForChild("RearrangeBank")
+local SetPlaceholderEvent = Actions:WaitForChild("SetPlaceholder")
+
+local DataManager = require(script.Parent:WaitForChild("DataManager"))
+local ItemDatabase = require(ReplicatedStorage:WaitForChild("Configs"):WaitForChild("ItemDatabase"))
 
 local BankManager = {}
+BankManager.MAX_SLOTS_PER_TAB = 800
 
-BankManager.MAX_SLOTS_PER_TAB = 800 -- Public for CommandHandler
-local MAX_TABS = 10
-
--- Function to initialize a player's bank
-local function initializeBank(player)
+function BankManager:GetBank(player)
 	local data = DataManager.GetData(player)
-	if not data then
-		warn("[Level Up Larry] Failed to get data for " .. player.Name .. " in BankManager")
-		return
-	end
 	if not data.Bank then
-		data.Bank = {tabs = { [1] = {} }, placeholders = {}}
-		for i = 1, BankManager.MAX_SLOTS_PER_TAB do
-			data.Bank.tabs[1][i] = nil
-		end
+		data.Bank = {tabs = {{}}, placeholders = {}}
 		DataManager.SetData(player, data)
 	end
+	if not data.Bank.tabs[1] then
+		data.Bank.tabs[1] = {}
+	end
+	return data.Bank
 end
 
--- Function to deposit an item into a player's bank
-function BankManager.DepositItem(player, itemId, amount, tabIndex)
-	local data = DataManager.GetData(player)
-	if not data then
-		warn("[Level Up Larry] Failed to get data for " .. player.Name .. " in BankManager")
-		return false
-	end
-	local bank = data.Bank
-	local item = ItemDatabase[itemId]
-	if not item then
-		warn("[Level Up Larry] Invalid item ID: " .. tostring(itemId))
-		return false
-	end
-	tabIndex = tabIndex or 1
+function BankManager:DepositItem(player, itemId, quantity, tabIndex, data)
+	local bank = self:GetBank(player)
+	local tab = bank.tabs[tabIndex] or {}
+	local itemEntry = {itemId = itemId, quantity = quantity, data = data}
 
-	if not bank.tabs[tabIndex] then
-		bank.tabs[tabIndex] = {}
-		for i = 1, BankManager.MAX_SLOTS_PER_TAB do
-			bank.tabs[tabIndex][i] = nil
-		end
-	end
-
-	if item.stackable then
-		for i = 1, BankManager.MAX_SLOTS_PER_TAB do
-			if bank.tabs[tabIndex][i] and bank.tabs[tabIndex][i].itemId == itemId then
-				bank.tabs[tabIndex][i].quantity = bank.tabs[tabIndex][i].quantity + amount
-				DataManager.SetData(player, data)
+	if ItemDatabase[itemId].stackable and not data then
+		for i, existingItem in ipairs(tab) do
+			if existingItem.itemId == itemId and not existingItem.data then
+				existingItem.quantity = existingItem.quantity + quantity
+				DataManager.SetData(player, DataManager.GetData(player))
 				GetBankItemsEvent:FireClient(player, bank.tabs, tabIndex)
-				print("[Level Up Larry] Server: Stacked " .. item.name .. " x" .. amount .. " in slot " .. i .. " of tab " .. tabIndex .. " for " .. player.Name)
 				return true
 			end
 		end
 	end
 
-	for i = 1, BankManager.MAX_SLOTS_PER_TAB do
-		if not bank.tabs[tabIndex][i] then
-			bank.tabs[tabIndex][i] = {itemId = itemId, quantity = amount}
-			DataManager.SetData(player, data)
+	table.insert(tab, itemEntry)
+	DataManager.SetData(player, DataManager.GetData(player))
+	GetBankItemsEvent:FireClient(player, bank.tabs, tabIndex)
+	return true
+end
+
+function BankManager:WithdrawItem(player, itemId, quantity, tabIndex, slotIndex)
+	local bank = self:GetBank(player)
+	local tab = bank.tabs[tabIndex]
+	if tab[slotIndex] and tab[slotIndex].itemId == itemId then
+		local item = tab[slotIndex]
+		if item.quantity >= quantity then
+			item.quantity = item.quantity - quantity
+			if item.quantity <= 0 then
+				table.remove(tab, slotIndex)
+			end
+			DataManager.SetData(player, DataManager.GetData(player))
 			GetBankItemsEvent:FireClient(player, bank.tabs, tabIndex)
-			print("[Level Up Larry] Server: Deposited " .. item.name .. " x" .. amount .. " to slot " .. i .. " of tab " .. tabIndex .. " for " .. player.Name)
 			return true
 		end
 	end
-
-	print("[Level Up Larry] Server: Bank tab " .. tabIndex .. " full for " .. player.Name)
 	return false
 end
 
--- Function to withdraw an item from a player's bank
-function BankManager.WithdrawItem(player, itemId, amount, tabIndex, slotIndex)
-	local data = DataManager.GetData(player)
-	if not data then
-		warn("[Level Up Larry] Failed to get data for " .. player.Name .. " in BankManager")
-		return false
+function BankManager:RearrangeBank(player, fromTab, fromSlot, toTab, toSlot)
+	local bank = self:GetBank(player)
+	local fromTabData = bank.tabs[fromTab]
+	local toTabData = bank.tabs[toTab]
+	if fromTabData[fromSlot] then
+		local item = table.remove(fromTabData, fromSlot)
+		table.insert(toTabData, toSlot, item)
+		DataManager.SetData(player, DataManager.GetData(player))
+		GetBankItemsEvent:FireClient(player, bank.tabs, toTab)
 	end
-	local bank = data.Bank
-	if not bank.tabs[tabIndex] or not bank.tabs[tabIndex][slotIndex] then
-		warn("[Level Up Larry] Invalid slot or tab for " .. player.Name)
-		return false
-	end
-
-	local itemData = bank.tabs[tabIndex][slotIndex]
-	if itemData.itemId ~= itemId or itemData.quantity < amount then
-		warn("[Level Up Larry] Invalid withdrawal attempt by " .. player.Name)
-		return false
-	end
-
-	itemData.quantity = itemData.quantity - amount
-	if itemData.quantity <= 0 then
-		bank.tabs[tabIndex][slotIndex] = nil
-	end
-	DataManager.SetData(player, data)
-	GetBankItemsEvent:FireClient(player, bank.tabs, tabIndex)
-	print("[Level Up Larry] Server: Withdrew " .. ItemDatabase[itemId].name .. " x" .. amount .. " from slot " .. slotIndex .. " of tab " .. tabIndex .. " for " .. player.Name)
-	return true
 end
 
--- Function to rearrange bank (for drag-and-drop)
-function BankManager.RearrangeBank(player, fromTab, fromSlot, toTab, toSlot)
-	local data = DataManager.GetData(player)
-	if not data then
-		warn("[Level Up Larry] Failed to get data for " .. player.Name .. " in BankManager")
-		return false
-	end
-	local bank = data.Bank
-	if not bank.tabs[fromTab] or not bank.tabs[toTab] then
-		warn("[Level Up Larry] Invalid tab indices for " .. player.Name)
-		return false
-	end
-
-	local temp = bank.tabs[toTab][toSlot]
-	bank.tabs[toTab][toSlot] = bank.tabs[fromTab][fromSlot]
-	bank.tabs[fromTab][fromSlot] = temp
-	DataManager.SetData(player, data)
-	GetBankItemsEvent:FireClient(player, bank.tabs, fromTab)
-	print("[Level Up Larry] Server: Rearranged bank for " .. player.Name .. " from slot " .. fromSlot .. " of tab " .. fromTab .. " to slot " .. toSlot .. " of tab " .. toTab)
-	return true
-end
-
--- Function to set a placeholder
-function BankManager.SetPlaceholder(player, tabIndex, slotIndex, itemId)
-	local data = DataManager.GetData(player)
-	if not data then
-		warn("[Level Up Larry] Failed to get data for " .. player.Name .. " in BankManager")
-		return false
-	end
-	local bank = data.Bank
-	if not bank.tabs[tabIndex] or not bank.tabs[tabIndex][slotIndex] then
-		warn("[Level Up Larry] Invalid slot or tab for " .. player.Name)
-		return false
-	end
-
-	bank.placeholders[itemId] = {tab = tabIndex, slot = slotIndex}
-	bank.tabs[tabIndex][slotIndex] = nil
-	DataManager.SetData(player, data)
-	GetBankItemsEvent:FireClient(player, bank.tabs, tabIndex)
-	print("[Level Up Larry] Server: Set placeholder for " .. ItemDatabase[itemId].name .. " in slot " .. slotIndex .. " of tab " .. tabIndex .. " for " .. player.Name)
-	return true
-end
-
-Players.PlayerAdded:Connect(function(player)
-	initializeBank(player)
+DepositItemEvent.OnServerEvent:Connect(function(player, itemId, quantity, tabIndex, data)
+	BankManager:DepositItem(player, itemId, quantity, tabIndex, data)
 end)
 
-DepositItemEvent.OnServerEvent:Connect(function(player, itemId, amount, tabIndex)
-	if type(itemId) ~= "number" or type(amount) ~= "number" or amount <= 0 then
-		warn("[Level Up Larry] Invalid deposit attempt by " .. player.Name)
-		return
-	end
-	BankManager.DepositItem(player, itemId, amount, tabIndex)
-end)
-
-WithdrawItemEvent.OnServerEvent:Connect(function(player, itemId, amount, tabIndex, slotIndex)
-	if type(itemId) ~= "number" or type(amount) ~= "number" or amount <= 0 then
-		warn("[Level Up Larry] Invalid withdrawal attempt by " .. player.Name)
-		return
-	end
-	BankManager.WithdrawItem(player, itemId, amount, tabIndex, slotIndex)
-end)
-
-GetBankItemsEvent.OnServerEvent:Connect(function(player, tabIndex)
-	local data = DataManager.GetData(player)
-	if not data then
-		warn("[Level Up Larry] Failed to get data for " .. player.Name .. " in BankManager")
-		return
-	end
-	GetBankItemsEvent:FireClient(player, data.Bank.tabs, tabIndex or 1)
+WithdrawItemEvent.OnServerEvent:Connect(function(player, itemId, quantity, tabIndex, slotIndex)
+	BankManager:WithdrawItem(player, itemId, quantity, tabIndex, slotIndex)
 end)
 
 RearrangeBankEvent.OnServerEvent:Connect(function(player, fromTab, fromSlot, toTab, toSlot)
-	BankManager.RearrangeBank(player, fromTab, fromSlot, toTab, toSlot)
-end)
-
-SetPlaceholderEvent.OnServerEvent:Connect(function(player, tabIndex, slotIndex, itemId)
-	BankManager.SetPlaceholder(player, tabIndex, slotIndex, itemId)
+	BankManager:RearrangeBank(player, fromTab, fromSlot, toTab, toSlot)
 end)
 
 return BankManager

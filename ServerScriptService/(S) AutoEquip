@@ -1,43 +1,19 @@
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
+-- ServerScriptService/AutoEquip
 local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local Actions = ReplicatedStorage:WaitForChild("Actions")
 print("[Level Up Larry] AutoEquip starting")
 
-local function onPlayerAdded(player)
-	local character = player.Character or player.CharacterAdded:Wait()
-	wait(1) -- Wait for inventory to load
-	local bronzeAxe = ReplicatedStorage.Tools:FindFirstChild("BronzeAxe")
-	if not bronzeAxe then
-		warn("[Level Up Larry] BronzeAxe not found in ReplicatedStorage.Tools, creating fallback")
-		bronzeAxe = Instance.new("Tool")
-		bronzeAxe.Name = "BronzeAxe"
-		local handle = Instance.new("Part")
-		handle.Name = "Handle"
-		handle.Size = Vector3.new(0.2, 4, 0.2)
-		handle.Position = Vector3.new(0, 0, 0)
-		handle.BrickColor = BrickColor.new("Bright brown")
-		handle.Parent = bronzeAxe
-		local blade = Instance.new("Part")
-		blade.Name = "Blade"
-		blade.Size = Vector3.new(1, 2, 0.2)
-		blade.Position = Vector3.new(0, 2, 0)
-		blade.BrickColor = BrickColor.new("Bright yellow")
-		blade.Parent = bronzeAxe
-		local weld = Instance.new("WeldConstraint")
-		weld.Part0 = handle
-		weld.Part1 = blade
-		weld.Parent = bronzeAxe
-		bronzeAxe.Parent = ReplicatedStorage.Tools
-	end
-	local clonedAxe = bronzeAxe:Clone()
-	clonedAxe.Parent = player.Backpack
-	print("[Level Up Larry] Equipped " .. player.Name .. " with BronzeAxe in Backpack")
-end
-
-Players.PlayerAdded:Connect(onPlayerAdded)
-
-for _, player in pairs(Players:GetPlayers()) do
-	onPlayerAdded(player)
-end
+Players.PlayerAdded:Connect(function(player)
+	player.CharacterAdded:Connect(function(character)
+		local humanoid = character:WaitForChild("Humanoid")
+		local backpack = player:WaitForChild("Backpack")
+		local bronzeAxe = ReplicatedStorage:WaitForChild("Tools"):WaitForChild("BronzeAxe"):Clone()
+		bronzeAxe.Parent = backpack
+		humanoid:EquipTool(bronzeAxe)
+		print("[Level Up Larry] Equipped " .. player.Name .. " with BronzeAxe in Backpack")
+	end)
+end)
 
 print("[Level Up Larry] AutoEquip initialized")

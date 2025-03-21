@@ -3,22 +3,19 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 local ChatService = game:GetService("TextChatService")
 
+-- Wait for Actions to be ready
+local Actions = ReplicatedStorage:WaitForChild("Actions")
+local CommandEvent = Actions:WaitForChild("CommandEvent")
+local GetBankItemsEvent = Actions:WaitForChild("GetBankItems")
+local ToggleBankEvent = Actions:WaitForChild("ToggleBank")
+local GetPermissionLevelFunction = Actions:WaitForChild("GetPermissionLevel")
+
 local InventoryManager = require(script.Parent:WaitForChild("InventoryManager", 10)) or error("Failed to load InventoryManager")
 local BankManager = require(script.Parent:WaitForChild("BankManager", 10)) or error("Failed to load BankManager")
 local SkillManager = require(script.Parent:WaitForChild("SkillManager", 10)) or error("Failed to load SkillManager")
 local DataManager = require(script.Parent:WaitForChild("DataManager", 10)) or error("Failed to load DataManager")
 
-local Actions = ReplicatedStorage:WaitForChild("Actions")
-local CommandEvent = Actions:FindFirstChild("CommandEvent") or Instance.new("RemoteEvent")
-CommandEvent.Name = "CommandEvent"
-CommandEvent.Parent = Actions
-local GetBankItemsEvent = Actions:WaitForChild("GetBankItems")
-local ToggleBankEvent = Actions:WaitForChild("ToggleBank")
-local GetPermissionLevelFunction = Actions:FindFirstChild("GetPermissionLevel") or Instance.new("RemoteFunction")
-GetPermissionLevelFunction.Name = "GetPermissionLevel"
-GetPermissionLevelFunction.Parent = Actions
-
-print("[CommandHandler] Created CommandEvent")
+print("[CommandHandler] CommandHandler starting")
 
 local PERMISSION_LEVELS = {
 	PLAYER = 1,
@@ -164,7 +161,7 @@ Commands["xp"] = {
 }
 
 Commands["bank"] = {
-	Description = "Opens the player's bank. Usage: /bank",
+	Description = "Displays bank info (admins can open with B key, others use bank triggers). Usage: /bank",
 	PermissionLevel = PERMISSION_LEVELS.PLAYER,
 	Execute = function(player, args)
 		if not hasPermission(player, Commands["bank"].PermissionLevel) then
@@ -195,9 +192,11 @@ Commands["bank"] = {
 		local bank = data.Bank.tabs[1]
 		local itemCount = 0
 		for _ in pairs(bank) do itemCount = itemCount + 1 end
-		ToggleBankEvent:FireClient(player, true) -- Open the bank GUI
-		GetBankItemsEvent:FireClient(player, data.Bank.tabs, 1)
-		sendFeedback(player, "Bank opened with " .. itemCount .. " items in tab 1.")
+		if hasPermission(player, PERMISSION_LEVELS.ADMIN) then
+			sendFeedback(player, "Bank has " .. itemCount .. " items in tab 1. Press B to open as admin.")
+		else
+			sendFeedback(player, "Bank has " .. itemCount .. " items in tab 1. Use a bank trigger to open.")
+		end
 		logCommand(player, "bank", args)
 	end
 }

@@ -1,9 +1,12 @@
 -- ServerScriptService/SkillManager (ModuleScript)
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
-local DataManager = require(script.Parent.DataManager)
-local ItemDatabase = require(ReplicatedStorage.Configs:WaitForChild("ItemDatabase"))
-local AddItemEvent = ReplicatedStorage.Actions:WaitForChild("AddItem", 5)
+
+local Actions = ReplicatedStorage:WaitForChild("Actions")
+local AddItemEvent = Actions:WaitForChild("AddItem")
+
+local DataManager = require(script.Parent:WaitForChild("DataManager"))
+local ItemDatabase = require(ReplicatedStorage:WaitForChild("Configs"):WaitForChild("ItemDatabase"))
 
 local xpTable = {
 	0, 83, 174, 276, 388, 512, 650, 801, 969, 1154, 1358, 1584, 1833, 2107, 2411, 2746, 3115, 3523, 3973, 4470,

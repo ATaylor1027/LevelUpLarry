@@ -1,20 +1,16 @@
--- StarterPlayer > StarterPlayerScripts > Woodcutting
+-- StarterPlayer/StarterPlayerScripts/Skills/Woodcutting
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService = game:GetService("UserInputService")
 local Player = Players.LocalPlayer
 local PlayerGui = Player:WaitForChild("PlayerGui")
-local FellEvent = ReplicatedStorage:WaitForChild("Actions"):WaitForChild("Fell", 5)
-local StopChoppingEvent = ReplicatedStorage:WaitForChild("Actions"):FindFirstChild("StopChopping") or Instance.new("RemoteEvent")
-if not ReplicatedStorage.Actions:FindFirstChild("StopChopping") then
-	StopChoppingEvent.Name = "StopChopping"
-	StopChoppingEvent.Parent = ReplicatedStorage.Actions
-	print("[Level Up Larry] Created StopChopping RemoteEvent")
-end
+
+local Actions = ReplicatedStorage:WaitForChild("Actions")
+local FellEvent = Actions:WaitForChild("FellEvent")
+local StopChoppingEvent = Actions:WaitForChild("StopChopping")
 
 print("[Level Up Larry] Woodcutting starting")
 
--- Popup GUI setup
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "WoodcuttingProgress"
 screenGui.ResetOnSpawn = false
@@ -104,11 +100,8 @@ local function setupWoodcuttingPrompts()
 					for _, child in pairs(tree:GetChildren()) do
 						print("[Level Up Larry] - " .. child.Name .. " (" .. child.ClassName .. ")")
 					end
-					trunk = tree:FindFirstChildWhichIsA("MeshPart", true)
-					if not trunk then
-						warn("[Level Up Larry] No MeshPart found in " .. tree.Name .. ", using tree as fallback")
-						trunk = tree
-					end
+					trunk = tree:FindFirstChildWhichIsA("MeshPart", true) or tree
+					print("[Level Up Larry] Using fallback: " .. trunk.Name .. " as trunk")
 				end
 			else
 				trunk = tree

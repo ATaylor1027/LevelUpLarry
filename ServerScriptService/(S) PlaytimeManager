@@ -1,11 +1,13 @@
--- ServerScriptService > PlaytimeManager
+-- ServerScriptService/PlaytimeManager
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local DataStoreService = game:GetService("DataStoreService")
 
-local PlaytimeDataStore = DataStoreService:GetDataStore("PlaytimeData")
-local GetPlaytime = ReplicatedStorage:WaitForChild("Actions"):WaitForChild("GetPlaytime")
+-- Wait for Actions to be ready
+local Actions = ReplicatedStorage:WaitForChild("Actions")
+local GetPlaytime = Actions:WaitForChild("GetPlaytime")
 
+local PlaytimeDataStore = DataStoreService:GetDataStore("PlaytimeData")
 local playerPlaytime = {}
 
 Players.PlayerAdded:Connect(function(player)

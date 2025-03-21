@@ -3,6 +3,10 @@ local Players = game:GetService("Players")
 local TextChatService = game:GetService("TextChatService")
 local Player = Players.LocalPlayer
 
+-- Wait for Actions to be ready (not strictly needed here, but added for consistency)
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Actions = ReplicatedStorage:WaitForChild("Actions")
+
 -- Wait for DataManager to replicate IsMuted
 local function getIsMuted()
 	local data = Player:WaitForChild("Data", 10) -- Folder to hold player data
@@ -14,14 +18,12 @@ end
 
 TextChatService.OnIncomingMessage = function(messageData)
 	local properties = Instance.new("TextChatMessageProperties")
-	-- Use messageData.Text (correct property for TextChatMessage)
 	properties.Text = messageData.Text or ""
 
-	-- Check if the message is from the local player using TextSource
 	if messageData.TextSource and messageData.TextSource.UserId == Player.UserId then
 		if getIsMuted() then
 			properties.Text = "" -- Suppress the player's own message if muted
 		end
 	end
-	return properties -- Return TextChatMessageProperties instance
+	return properties
 end

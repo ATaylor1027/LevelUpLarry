@@ -1,6 +1,9 @@
+-- StarterPlayer/StarterPlayerScripts/Skills/Mining
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local MineEvent = ReplicatedStorage.Actions:WaitForChild("Mine", 5)
+
+local Actions = ReplicatedStorage:WaitForChild("Actions")
+local MineEvent = Actions:WaitForChild("Mine")
 
 print("[Level Up Larry] Mining starting")
 

@@ -1,0 +1,204 @@
+-- StarterGui/ScreenGui/BankMaster/StorageBar/BankGUIScript
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local UserInputService = game:GetService("UserInputService")
+local Player = Players.LocalPlayer
+local PlayerGui = Player:WaitForChild("PlayerGui")
+
+-- Wait for Actions to be ready
+local ActionsReady = ReplicatedStorage:WaitForChild("ActionsReady", 15)
+if not ActionsReady then
+	warn("[BankGUIScript] ActionsReady not found in ReplicatedStorage after 15s")
+	return
+end
+print("[BankGUIScript] Waiting for ActionsReady.Value to be true")
+if not ActionsReady.Value then
+	ActionsReady:GetPropertyChangedSignal("Value"):Wait()
+end
+print("[BankGUIScript] ActionsReady.Value is true")
+local Actions = ReplicatedStorage:WaitForChild("Actions")
+local ToggleBankEvent = Actions:WaitForChild("ToggleBank")
+local GetBankItemsEvent = Actions:WaitForChild("GetBankItems")
+local DepositItemEvent = Actions:WaitForChild("DepositItemEvent")
+local WithdrawItemEvent = Actions:WaitForChild("WithdrawItem")
+local RearrangeBankEvent = Actions:WaitForChild("RearrangeBank")
+local GetPermissionLevelFunction = Actions:WaitForChild("GetPermissionLevel")
+local ItemDatabase = require(ReplicatedStorage:WaitForChild("Configs"):WaitForChild("ItemDatabase"))
+local Keybinds = require(ReplicatedStorage:WaitForChild("Configs"):WaitForChild("Keybinds"))
+
+print("[Level Up Larry] Custom Bank GUI starting")
+
+local screenGui = script.Parent.Parent.Parent
+screenGui.Name = "CustomBankGUI"
+screenGui.ResetOnSpawn = false
+screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+screenGui.Parent = PlayerGui
+screenGui.Enabled = false -- Disable by default
+
+local bankFrame = screenGui:FindFirstChild("BankFrame") or Instance.new("Frame")
+bankFrame.Name = "BankFrame"
+bankFrame.Size = UDim2.new(0, 600, 0, 400)
+bankFrame.Position = UDim2.new(0.5, -300, 0.5, -200)
+bankFrame.BackgroundColor3 = Color3.fromRGB(62, 53, 41)
+bankFrame.BorderSizePixel = 0
+bankFrame.Visible = false
+bankFrame.Parent = screenGui
+
+local scrollingFrame = bankFrame:FindFirstChild("BankItems") or Instance.new("ScrollingFrame")
+scrollingFrame.Name = "BankItems"
+scrollingFrame.Size = UDim2.new(0, 560, 0, 300)
+scrollingFrame.Position = UDim2.new(0, 20, 0, 80)
+scrollingFrame.BackgroundTransparency = 1
+scrollingFrame.ScrollBarThickness = 8
+scrollingFrame.ZIndex = 2
+scrollingFrame.Parent = bankFrame
+
+local SLOT_SIZE = 50
+local SLOT_SPACING = 5
+local ITEMS_PER_ROW = math.floor(560 / (SLOT_SIZE + SLOT_SPACING))
+
+local bankItems = {}
+local currentTab = 1
+
+-- Get admin bank toggle key from Keybinds (default to B if not set)
+local adminBankKey = Keybinds.AdminBank or Enum.KeyCode.B
+print("[Level Up Larry] Admin bank toggle key set to: " .. tostring(adminBankKey))
+
+local function updateBankDisplay(tabs, tabIndex)
+	for _, item in pairs(bankItems) do
+		item.Frame:Destroy()
+	end
+	bankItems = {}
+
+	local tab = tabs[tabIndex] or {}
+	local row, col = 0, 0
+
+	for i, itemData in ipairs(tab) do
+		local item = ItemDatabase[itemData.itemId]
+		local slotFrame = Instance.new("Frame")
+		slotFrame.Name = "ItemSlot" .. i
+		slotFrame.Size = UDim2.new(0, SLOT_SIZE, 0, SLOT_SIZE)
+		slotFrame.Position = UDim2.new(0, col * (SLOT_SIZE + SLOT_SPACING), 0, row * (SLOT_SIZE + SLOT_SPACING))
+		slotFrame.BackgroundColor3 = Color3.fromRGB(205, 174, 121)
+		slotFrame.BorderSizePixel = 1
+		slotFrame.ZIndex = 2
+		slotFrame.Parent = scrollingFrame
+
+		local itemImage = Instance.new("ImageLabel")
+		itemImage.Name = "ItemImage"
+		itemImage.Size = UDim2.new(1, 0, 1, 0)
+		itemImage.BackgroundTransparency = 1
+		itemImage.Image = item.icon or "rbxassetid://1234567890"
+		itemImage.ZIndex = 3
+		itemImage.Parent = slotFrame
+
+		local amountLabel = Instance.new("TextLabel")
+		amountLabel.Name = "AmountLabel"
+		amountLabel.Size = UDim2.new(0, 20, 0, 20)
+		amountLabel.Position = UDim2.new(0.6, 0, 0.6, 0)
+		amountLabel.Text = item.stackable and itemData.quantity > 1 and tostring(itemData.quantity) or (itemData.data and itemData.data.charges and tostring(itemData.data.charges) or "")
+		amountLabel.TextColor3 = Color3.fromRGB(255, 255, 0)
+		amountLabel.TextSize = 14
+		amountLabel.BackgroundTransparency = 1
+		amountLabel.ZIndex = 4
+		amountLabel.Parent = slotFrame
+
+		bankItems[i] = { Frame = slotFrame, ItemImage = itemImage, AmountLabel = amountLabel, Data = itemData }
+
+		col = col + 1
+		if col >= ITEMS_PER_ROW then
+			col = 0
+			row = row + 1
+		end
+	end
+
+	local totalRows = math.ceil(#tab / ITEMS_PER_ROW)
+	scrollingFrame.CanvasSize = UDim2.new(0, 0, 0, totalRows * (SLOT_SIZE + SLOT_SPACING) + SLOT_SPACING)
+end
+
+local draggingSlot = nil
+local dragImage = nil
+
+local function setupDragging()
+	for i, slot in pairs(bankItems) do
+		slot.Frame.InputBegan:Connect(function(input)
+			if input.UserInputType == Enum.UserInputType.MouseButton1 then
+				draggingSlot = i
+				dragImage = slot.ItemImage:Clone()
+				dragImage.Parent = bankFrame
+				dragImage.ZIndex = 10
+				slot.ItemImage.ImageTransparency = 0.5
+				print("[Level Up Larry] Started dragging item from bank slot " .. i)
+			end
+		end)
+	end
+end
+
+UserInputService.InputChanged:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseMovement and draggingSlot then
+		local mousePos = UserInputService:GetMouseLocation()
+		dragImage.Position = UDim2.new(0, mousePos.X - SLOT_SIZE / 2, 0, mousePos.Y - SLOT_SIZE / 2)
+	end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 and draggingSlot then
+		local mousePos = UserInputService:GetMouseLocation()
+		local targetSlot = nil
+		for j, otherSlot in pairs(bankItems) do
+			if j ~= draggingSlot then
+				local pos = otherSlot.Frame.AbsolutePosition
+				local size = otherSlot.Frame.AbsoluteSize
+				if mousePos.X >= pos.X and mousePos.X <= pos.X + size.X and
+					mousePos.Y >= pos.Y and mousePos.Y <= pos.Y + size.Y then
+					targetSlot = j
+					break
+				end
+			end
+		end
+		if targetSlot then
+			RearrangeBankEvent:FireServer(currentTab, draggingSlot, currentTab, targetSlot)
+			wait(0.1)
+			GetBankItemsEvent:FireServer(currentTab)
+		end
+		bankItems[draggingSlot].ItemImage.ImageTransparency = 0
+		dragImage:Destroy()
+		draggingSlot = nil
+		dragImage = nil
+	end
+end)
+
+ToggleBankEvent.OnClientEvent:Connect(function(show)
+	bankFrame.Visible = show
+	if show then
+		GetBankItemsEvent:FireServer(currentTab)
+	end
+	print("[Level Up Larry] Bank toggled via event: " .. tostring(show))
+end)
+
+GetBankItemsEvent.OnClientEvent:Connect(function(tabs, tabIndex)
+	currentTab = tabIndex
+	updateBankDisplay(tabs, tabIndex)
+	setupDragging()
+end)
+
+-- Admin keybind for AdminBank
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+	if gameProcessed then return end
+	print("[Level Up Larry] Key pressed: " .. tostring(input.KeyCode))
+	if input.KeyCode == adminBankKey then
+		local permissionLevel = GetPermissionLevelFunction:InvokeServer()
+		print("[Level Up Larry] Permission level: " .. tostring(permissionLevel))
+		if permissionLevel >= 100 then -- ADMIN level
+			bankFrame.Visible = not bankFrame.Visible
+			print("[Level Up Larry] Admin toggled bank with " .. tostring(adminBankKey) .. " key: " .. tostring(bankFrame.Visible))
+			if bankFrame.Visible then
+				GetBankItemsEvent:FireServer(currentTab)
+			end
+		else
+			print("[Level Up Larry] Non-admin tried to open bank with " .. tostring(adminBankKey) .. " - use a bank trigger")
+		end
+	end
+end)
+
+print("[Level Up Larry] Custom Bank GUI fully initialized")

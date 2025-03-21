@@ -3,13 +3,9 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 local PlayerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
 
-local commandEvent = ReplicatedStorage:WaitForChild("Actions"):WaitForChild("CommandEvent", 30)
-if not commandEvent then
-	warn("[Level Up Larry] CommandEvent not found after 30 seconds")
-	return
-end
+local Actions = ReplicatedStorage:WaitForChild("Actions")
+local commandEvent = Actions:WaitForChild("CommandEvent")
 
--- Simple feedback popup (expand this for a full GUI later)
 commandEvent.OnClientEvent:Connect(function(command, message)
 	if command == "Feedback" then
 		local screenGui = Instance.new("ScreenGui")
